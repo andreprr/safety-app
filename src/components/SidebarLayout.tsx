@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, ShieldAlert, FileText, FileBadge, Menu, ChevronLeft, ChevronRight, BookOpen, Presentation } from "lucide-react";
+import { LayoutDashboard, ShieldAlert, FileText, FileBadge, Menu, ChevronLeft, ChevronRight, BookOpen, Presentation, AlertOctagon } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +19,9 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       <Link href="/inspeksi" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition" title="Form Inspeksi">
         <FileText size={20} className="shrink-0" /> {showText && <span>Form Inspeksi</span>}
       </Link>
+      <Link href="/temuan" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition" title="Review Temuan">
+        <AlertOctagon size={20} className="shrink-0" /> {showText && <span>Review Temuan</span>}
+      </Link>
       <Link href="/sop" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition" title="Dokumen SOP">
         <FileBadge size={20} className="shrink-0" /> {showText && <span>Dokumen SOP</span>}
       </Link>
@@ -28,6 +31,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       <Link href="/materi" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition" title="Materi Safety">
         <Presentation size={20} className="shrink-0" /> {showText && <span>Materi Safety</span>}
       </Link>
+     
     </>
   );
 
