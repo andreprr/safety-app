@@ -20,6 +20,10 @@ export default function InspeksiPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fotoFile, setFotoFile] = useState<File | null>(null);
 
+  // STATE BARU UNTUK ZOOM GAMBAR
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
   const [headerData, setHeaderData] = useState({
     nama_perusahaan: "", nama_formulir: "", no_formulir: "", revisi: "",
     tmt: "", halaman: "", nama_project: "", tanggal_laporan: ""
@@ -50,22 +54,12 @@ export default function InspeksiPage() {
     } catch (error) {} finally { setLoading(false); }
   };
 
-  // FUNGSI EXPORT KE EXCEL
   const exportToExcel = () => {
     const exportData = data.map((row, index) => ({
-      "No": index + 1,
-      "Temuan": row.temuan,
-      "Lokasi": row.lokasi,
-      "Kategori": row.kategori,
-      "PIC": row.pic,
-      "Tindakan Penanggulangan": row.tindakan_penanggulangan,
-      "Tanggal Temuan": row.tanggal_temuan,
-      "Cut Off Date": row.cut_off_date,
-      "Risk Level": row.risk_level,
-      "Status": row.status,
-      "Kategori Temuan": row.kategori_temuan
+      "No": index + 1, "Temuan": row.temuan, "Lokasi": row.lokasi, "Kategori": row.kategori,
+      "PIC": row.pic, "Tindakan Penanggulangan": row.tindakan_penanggulangan, "Tanggal Temuan": row.tanggal_temuan,
+      "Cut Off Date": row.cut_off_date, "Risk Level": row.risk_level, "Status": row.status, "Kategori Temuan": row.kategori_temuan
     }));
-
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data_Inspeksi");
@@ -107,11 +101,21 @@ export default function InspeksiPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 min-h-screen bg-white print:p-0 print:m-0">
+      
+      {/* DIALOG ZOOM GAMBAR */}
+      <Dialog open={isImageModalOpen} onOpenChange={setIsImageModalOpen}>
+        <DialogContent className="max-w-3xl p-2 bg-slate-900 border-none shadow-2xl">
+          <DialogHeader className="sr-only"><DialogTitle>Perbesar Foto Temuan</DialogTitle></DialogHeader>
+          {selectedImage && (
+            <img src={selectedImage} alt="Diperbesar" className="w-full h-auto max-h-[85vh] object-contain rounded-md" />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><FileText className="text-blue-600" /> Form Inspeksi</h1>
         
         <div className="flex flex-wrap gap-2">
-          {/* TOMBOL PDF & EXCEL */}
           <Button onClick={() => window.print()} variant="outline" className="flex gap-2 h-9 text-sm"><Printer size={16} /> PDF</Button>
           <Button onClick={exportToExcel} variant="outline" className="flex items-center gap-2 h-9 text-sm bg-green-50 text-green-700 hover:bg-green-100 border-green-200">
             <FileSpreadsheet size={16} /> Excel
@@ -164,6 +168,7 @@ export default function InspeksiPage() {
         </div>
       </div>
 
+      {/* KOP DOKUMEN CETAK */}
       <div className="border-2 border-black p-0 text-xs md:text-sm font-semibold overflow-x-auto print:border-collapse">
         <div className="min-w-[800px]">
           <div className="grid grid-cols-12 border-b-2 border-black">
@@ -188,6 +193,7 @@ export default function InspeksiPage() {
         </div>
       </div>
 
+      {/* TABEL */}
       <div className="w-full overflow-x-auto rounded-none border-2 border-black shadow-sm">
         <Table className="min-w-[1500px] border-collapse text-xs">
           <TableHeader className="bg-blue-300">
@@ -213,7 +219,23 @@ export default function InspeksiPage() {
                 <TableCell className="border-2 border-black p-2">{row.temuan}</TableCell>
                 <TableCell className="border-2 border-black p-2 text-center">{row.lokasi}</TableCell>
                 <TableCell className="border-2 border-black p-2 text-center">{row.kategori}</TableCell>
-                <TableCell className="border-2 border-black p-2 text-center">{row.foto_url ? <img src={row.foto_url} alt="Temuan" className="w-full max-h-[100px] object-cover" /> : "Tanpa Foto"}</TableCell>
+                
+                {/* PEMBARUAN: GAMBAR BISA DIKLIK */}
+                <TableCell className="border-2 border-black p-2 text-center">
+                  {row.foto_url ? (
+                    <img 
+                      src={row.foto_url} 
+                      alt="Temuan" 
+                      className="w-full max-h-[100px] object-cover cursor-pointer hover:opacity-80 transition-opacity" 
+                      onClick={() => {
+                        setSelectedImage(row.foto_url);
+                        setIsImageModalOpen(true);
+                      }}
+                      title="Klik untuk perbesar"
+                    /> 
+                  ) : "Tanpa Foto"}
+                </TableCell>
+                
                 <TableCell className="border-2 border-black p-2 text-center">{row.pic}</TableCell>
                 <TableCell className="border-2 border-black p-2">{row.tindakan_penanggulangan}</TableCell>
                 <TableCell className="border-2 border-black p-2 text-center">{row.tanggal_temuan}</TableCell>
