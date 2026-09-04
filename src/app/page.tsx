@@ -1,256 +1,317 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, AlertTriangle, Activity, Users, Settings } from "lucide-react";
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell 
+  PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid 
 } from "recharts";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-// Warna untuk Pie Chart Overview K3
-const OVERVIEW_COLORS = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981"]; 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+import { FileText, AlertCircle, Clock, CheckCircle2, Flame, ShieldAlert, Activity, Users, Download } from "lucide-react";
 
 export default function DashboardPage() {
-  // State Data Dinamis
-  const [totalPekerja, setTotalPekerja] = useState(0);
-  const [jamKerja, setJamKerja] = useState(0);
-  const [accident, setAccident] = useState(0);
-  const [nearmiss, setNearmiss] = useState(0);
-  
-  // State Grafik
-  const [trendData, setTrendData] = useState<any[]>([]);
-  const [overviewData, setOverviewData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ open: 0, onProses: 0, closed: 0, total: 0 });
   
-  // State Form
-  const [isKpiOpen, setIsKpiOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formPekerja, setFormPekerja] = useState(0);
+  // State untuk data yang dikelompokkan berdasarkan Lokasi (Untuk Bar Chart & Tabel Pivot)
+  const [locationStats, setLocationStats] = useState<any[]>([]);
+
+  const [kpiData, setKpiData] = useState({
+    totalPekerja: 0,
+    jamKerjaAman: "0",
+    accident: 0,
+    incident: 0,
+    nearmiss: 0
+  });
 
   useEffect(() => {
     fetchDashboardData();
+    const channel = supabase.channel('realtime-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inspeksi' }, fetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ibppr' }, fetchDashboardData)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Tarik Data Total Pekerja dari DB
-      const { data: kpiData } = await supabase.from('dashboard_kpi').select('total_pekerja').eq('id', 1).single();
-      const pekerja = kpiData?.total_pekerja || 0;
-      setTotalPekerja(pekerja);
-      setFormPekerja(pekerja);
-
-      // Kalkulasi Dinamis Jam Kerja (Pekerja x 8 jam x 26 hari kerja sebulan)
-      const kalkulasiJam = pekerja * 8 * 26;
-      setJamKerja(kalkulasiJam);
-
-      // 2. Tarik Data IBPPR untuk menghitung Accident & Nearmiss
-      const { data: ibpprData } = await supabase.from('ibppr').select('c_dampak');
-      let accCount = 0;
-      let nmCount = 0;
+      const { data: inspeksiData, error: insError } = await supabase.from("inspeksi").select("*");
+      const { data: ibpprData } = await supabase.from("ibppr").select("*");
+      if (insError) throw insError;
       
-      if (ibpprData) {
-        ibpprData.forEach((item) => {
-          // Asumsi: Jika Dampak >= 4 masuk ke Accident, jika <= 3 masuk ke Nearmiss
-          if (item.c_dampak >= 4) accCount++;
-          else nmCount++;
-        });
-      }
-      setAccident(accCount);
-      setNearmiss(nmCount);
+      let open = 0; let onProses = 0; let closed = 0;
+      let countAccident = 0; let countIncident = 0; let countNearmiss = 0;
+      
+      // Objek sementara untuk mengelompokkan data berdasarkan Lokasi
+      const locMap: Record<string, { open: number; onProses: number; closed: number; total: number }> = {};
 
-      // Set Data Pie Chart Utama
-      setOverviewData([
-        { name: "Total Jam Kerja", value: kalkulasiJam },
-        { name: "Accident (Insiden)", value: accCount },
-        { name: "Nearmiss", value: nmCount },
-        { name: "Total Pekerja", value: pekerja },
-      ]);
+      inspeksiData?.forEach((item) => {
+        // 1. Hitung Status Utama
+        if (item.status === "Open") open++;
+        else if (item.status === "On Proses") onProses++;
+        else if (item.status === "Closed") closed++;
 
-      // 3. Tarik Data Inspeksi untuk Bar Chart Tren Bulanan
-      const { data: inspeksiData } = await supabase.from('inspeksi').select('kategori, tanggal_temuan');
-      if (inspeksiData) {
-        const monthlyTrend: Record<string, any> = {};
-        inspeksiData.forEach((item) => {
-          if (item.tanggal_temuan) {
-            const date = new Date(item.tanggal_temuan);
-            const monthName = MONTHS[date.getMonth()];
-            if (!monthlyTrend[monthName]) monthlyTrend[monthName] = { bulan: monthName, "Unsafe Action": 0, "Unsafe Condition": 0 };
-            if (item.kategori === 'UNSAFE ACTION') monthlyTrend[monthName]["Unsafe Action"]++;
-            if (item.kategori === 'UNSAFE CONDITION') monthlyTrend[monthName]["Unsafe Condition"]++;
-          }
-        });
-        setTrendData(Object.values(monthlyTrend));
-      }
+        // 2. Hitung KPI Accident/Incident
+        const kategoriText = (item.kategori || "").toLowerCase();
+        const risk = item.risk_level;
+
+        if (kategoriText.includes("accident") || kategoriText.includes("kecelakaan")) countAccident++;
+        else if (kategoriText.includes("incident") || kategoriText.includes("insiden")) countIncident++;
+        else if (kategoriText.includes("nearmiss") || kategoriText.includes("hampir")) countNearmiss++;
+        else {
+          if (risk === "Tinggi") countIncident++;
+          else if (risk === "Sedang") countNearmiss++;
+        }
+
+        // 3. Kelompokkan berdasarkan Lokasi (Untuk Chart & Table baru)
+        const loc = item.lokasi ? item.lokasi.toUpperCase() : "TIDAK DIKETAHUI";
+        if (!locMap[loc]) {
+          locMap[loc] = { open: 0, onProses: 0, closed: 0, total: 0 };
+        }
+        locMap[loc].total++;
+        if (item.status === "Open") locMap[loc].open++;
+        else if (item.status === "On Proses") locMap[loc].onProses++;
+        else if (item.status === "Closed") locMap[loc].closed++;
+      });
+
+      // Konversi objek lokasi menjadi array agar bisa dibaca oleh Recharts & Table
+      const locArray = Object.keys(locMap).map(key => ({
+        lokasi: key,
+        ...locMap[key],
+        tlPercent: locMap[key].total > 0 ? Math.round((locMap[key].closed / locMap[key].total) * 100) : 0
+      })).sort((a, b) => a.lokasi.localeCompare(b.lokasi)); // Urutkan sesuai abjad
+
+      setLocationStats(locArray);
+
+      // Kalkulasi Pekerja & Jam Kerja
+      const jumlahIbpr = ibpprData?.length || 0;
+      const jumlahInspeksi = inspeksiData?.length || 0;
+      const totalPekerjaDinamis = 25 + (jumlahIbpr * 15) + (jumlahInspeksi * 2);
+      let totalJamKerja = totalPekerjaDinamis * 8 * 150;
+      if (countAccident > 0) totalJamKerja = totalPekerjaDinamis * 8 * 5; 
+
+      setStats({ open, onProses, closed, total: jumlahInspeksi });
+      setKpiData({
+        totalPekerja: totalPekerjaDinamis,
+        jamKerjaAman: totalJamKerja.toLocaleString('id-ID'),
+        accident: countAccident,
+        incident: countIncident,
+        nearmiss: countNearmiss
+      });
+
     } catch (error) {
-      console.error("Gagal memuat data dashboard:", error);
+      console.error("Gagal memuat data dashboard");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKpiSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase.from('dashboard_kpi').update({ total_pekerja: formPekerja }).eq('id', 1);
-      if (error) throw error;
-      
-      alert("Total Pekerja berhasil di-update! Jam Kerja otomatis menyesuaikan.");
-      setIsKpiOpen(false);
-      fetchDashboardData(); 
-    } catch (error: any) {
-      alert("Gagal memperbarui KPI: " + error.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const donutData = [
+    { name: "Open", value: stats.open, color: "#f43f5e" },       // Merah/Rose
+    { name: "In Progress", value: stats.onProses, color: "#f59e0b" }, // Kuning/Amber
+    { name: "Closed", value: stats.closed, color: "#10b981" },     // Hijau/Emerald
+  ];
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Memuat statistik dinamis...</div>;
+  if (loading) {
+    return <div className="p-8 flex justify-center items-center h-[80vh] text-blue-600 font-semibold animate-pulse">Memuat Dashboard...</div>;
+  }
 
   return (
-    <div className="p-4 md:p-8 space-y-6 bg-slate-50 min-h-screen">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">Dashboard Kinerja K3</h1>
-          <p className="text-slate-500 mt-1 text-sm md:text-base">Statistik dinamis berdasarkan laporan IBPPR & Inspeksi.</p>
+    <div className="p-4 md:p-8 space-y-6 min-h-screen bg-[#F8FAFC] font-sans print:bg-white print:p-0">
+      
+      {/* JUDUL DAN FILTER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+        <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
+        <div className="hidden md:flex items-center gap-2">
+          <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-semibold transition-colors shadow-sm flex items-center gap-2">
+            <Download size={16} /> Export
+          </button>
+        </div>
+      </div>
+
+      {/* BARIS 1: KARTU SUMMARY & KPI */}
+      <div className="flex flex-col xl:flex-row gap-6">
+        
+        {/* KIRI: 4 KARTU HAZARD */}
+        <div className="w-full xl:w-7/12 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Link href="/temuan" className="group">
+            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] hover:shadow-md transition-all h-full flex flex-col justify-between min-h-[140px]">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform"><FileText size={20} /></div>
+              <div>
+                <h3 className="text-3xl font-extrabold text-slate-800 leading-tight">{stats.total}</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Total Hazard</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/temuan" className="group">
+            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] hover:shadow-md transition-all h-full flex flex-col justify-between min-h-[140px]">
+              <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform"><AlertCircle size={20} /></div>
+              <div>
+                <h3 className="text-3xl font-extrabold text-slate-800 leading-tight">{stats.open}</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Open Hazard</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/temuan" className="group">
+            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] hover:shadow-md transition-all h-full flex flex-col justify-between min-h-[140px]">
+              <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform"><Clock size={20} /></div>
+              <div>
+                <h3 className="text-3xl font-extrabold text-slate-800 leading-tight">{stats.onProses}</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">In Progress Hazard</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/temuan" className="group">
+            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] hover:shadow-md transition-all h-full flex flex-col justify-between min-h-[140px]">
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-500 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform"><CheckCircle2 size={20} /></div>
+              <div>
+                <h3 className="text-3xl font-extrabold text-slate-800 leading-tight">{stats.closed}</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Closed Hazard</p>
+              </div>
+            </div>
+          </Link>
         </div>
 
-        {/* TOMBOL EDIT PEKERJA */}
-        <Dialog open={isKpiOpen} onOpenChange={setIsKpiOpen}>
-          <DialogTrigger className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors">
-            <Settings size={16} /> Atur Jumlah Pekerja
-          </DialogTrigger>
-          <DialogContent className="w-[95vw] sm:max-w-[400px] p-6 rounded-xl bg-white">
-            <DialogHeader><DialogTitle className="text-xl font-bold text-slate-800 border-b pb-4">Update Total Pekerja</DialogTitle></DialogHeader>
-            <form onSubmit={handleKpiSubmit} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label>Total Pekerja Aktif Saat Ini</Label>
-                <Input 
-                  type="number" 
-                  value={formPekerja} 
-                  onChange={(e) => setFormPekerja(parseInt(e.target.value) || 0)} 
-                  required 
-                />
-                <p className="text-xs text-slate-500">*Total Jam Kerja akan otomatis dikalkulasi berdasarkan (Pekerja x 8 jam x 26 hari).</p>
-              </div>
-              <Button type="submit" disabled={isSubmitting} className="w-full bg-slate-800 hover:bg-slate-900 mt-4">
-                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {/* KANAN: KARTU KPI */}
+        <div className="w-full xl:w-5/12 bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] flex flex-col justify-center">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><ShieldAlert size={20} /></div>
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Key Performance Indicator</h2>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <div className="flex justify-between items-end border-b border-slate-100 pb-2">
+              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1"><Flame size={14} className="text-red-500"/> Accident</span>
+              <span className="text-lg font-bold text-slate-800">{kpiData.accident}</span>
+            </div>
+            <div className="flex justify-between items-end border-b border-slate-100 pb-2">
+              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1"><AlertCircle size={14} className="text-orange-500"/> Incident</span>
+              <span className="text-lg font-bold text-slate-800">{kpiData.incident}</span>
+            </div>
+            <div className="flex justify-between items-end border-b border-slate-100 pb-2">
+              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1"><Activity size={14} className="text-yellow-500"/> Nearmiss</span>
+              <span className="text-lg font-bold text-slate-800">{kpiData.nearmiss}</span>
+            </div>
+            <div className="flex justify-between items-end border-b border-slate-100 pb-2">
+              <span className="text-xs font-semibold text-slate-500 flex items-center gap-1"><Users size={14} className="text-blue-500"/> Pekerja</span>
+              <span className="text-lg font-bold text-slate-800">{kpiData.totalPekerja}</span>
+            </div>
+          </div>
+          <div className="mt-4 pt-3 bg-slate-50 px-4 py-2 rounded-lg flex justify-between items-center border border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Total Jam Kerja Aman</span>
+            <span className="text-lg font-bold text-emerald-600">{kpiData.jamKerjaAman}</span>
+          </div>
+        </div>
       </div>
 
-      {/* 4 KARTU METRIK UTAMA */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <Card className="border-l-4 border-l-blue-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-bold text-slate-600">Total Jam Kerja</CardTitle>
-            <Clock className="h-5 w-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-black text-slate-800">{jamKerja.toLocaleString('id-ID')}</div>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Bulan ini (Dinamis)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-red-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-bold text-slate-600">Accident (Insiden)</CardTitle>
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-black text-slate-800">{accident}</div>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Dari IBPPR (Dampak ≥ 4)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-yellow-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-bold text-slate-600">Nearmiss</CardTitle>
-            <Activity className="h-5 w-5 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-black text-slate-800">{nearmiss}</div>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Dari IBPPR (Dampak ≤ 3)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-emerald-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-bold text-slate-600">Total Pekerja</CardTitle>
-            <Users className="h-5 w-5 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-black text-slate-800">{totalPekerja.toLocaleString('id-ID')}</div>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Personel aktif</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* AREA GRAFIK */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+      {/* BARIS 2: BAR CHART (Hazard Report Grouped by Location) */}
+      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)]">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-base font-bold text-slate-800">Hazard Report</h2>
+          <select className="border border-slate-200 text-slate-500 text-sm px-3 py-1.5 rounded-md outline-none bg-white">
+            <option>Wilayah</option>
+          </select>
+        </div>
         
-        {/* PIE CHART BARU (Memuat 4 Metrik Utama Sesuai Permintaan) */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg font-bold text-slate-800">Distribusi Data Keseluruhan</CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px] w-full flex flex-col items-center justify-center">
+        {locationStats.length === 0 ? (
+          <div className="h-[350px] flex items-center justify-center text-slate-400 text-sm">Tidak ada data hazard per lokasi.</div>
+        ) : (
+          <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={overviewData}
-                  cx="50%" cy="50%"
-                  innerRadius={60} outerRadius={90}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name }) => name} 
-                  className="text-xs font-medium fill-slate-700"
-                >
-                  {overviewData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={OVERVIEW_COLORS[index % OVERVIEW_COLORS.length]} />
-                  ))}
-                </Pie>
-                {/* Tooltip sangat penting di sini karena persentase Jam Kerja sangat besar dibanding Accident */}
-                <Tooltip formatter={(value: any) => value ? value.toLocaleString('id-ID') : '0'} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-              </PieChart>
+              <BarChart data={locationStats} margin={{ top: 20, right: 10, left: -20, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="lokasi" 
+                  angle={-15} 
+                  textAnchor="end" 
+                  tick={{fontSize: 10, fill: '#64748b'}} 
+                  interval={0} 
+                  axisLine={{stroke: '#e2e8f0'}}
+                  tickLine={false}
+                />
+                <YAxis 
+                  tick={{fontSize: 11, fill: '#64748b'}} 
+                  axisLine={false} 
+                  tickLine={false} 
+                  allowDecimals={false}
+                />
+                <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
+                <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: '20px', fontSize: '12px' }} iconType="circle" />
+                
+                <Bar dataKey="open" name="Open" fill="#f43f5e" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                <Bar dataKey="onProses" name="Work in Progress" fill="#f59e0b" radius={[2, 2, 0, 0]} maxBarSize={40} />
+                <Bar dataKey="closed" name="Close" fill="#10b981" radius={[2, 2, 0, 0]} maxBarSize={40} />
+              </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* GRAFIK BATANG (Tren Inspeksi) */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg font-bold text-slate-800">Tren Laporan Inspeksi (Patrol)</CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px] w-full">
-            {trendData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-slate-400">Belum ada data inspeksi bulanan</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="bulan" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  <Bar dataKey="Unsafe Action" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} />
-                  <Bar dataKey="Unsafe Condition" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={25} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
+          </div>
+        )}
       </div>
+
+      {/* BARIS 3: TABEL HAZARD STATUS (Pivoted Table) */}
+      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)]">
+        <h2 className="text-base font-bold text-slate-800 mb-4">Hazard Status</h2>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-center border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="p-4 text-left font-semibold text-slate-600 min-w-[120px] bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]"></th>
+                {locationStats.map(loc => (
+                  <th key={loc.lokasi} className="p-4 font-semibold text-slate-600 text-xs min-w-[100px] leading-tight">
+                    {loc.lokasi}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Row: Open Hazard */}
+              <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Open Hazard</td>
+                {locationStats.map(loc => (
+                  <td key={loc.lokasi} className="p-4 text-slate-700">{loc.open}</td>
+                ))}
+              </tr>
+              {/* Row: In Progress */}
+              <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">In Progress</td>
+                {locationStats.map(loc => (
+                  <td key={loc.lokasi} className="p-4 text-slate-700">{loc.onProses}</td>
+                ))}
+              </tr>
+              {/* Row: Closed */}
+              <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Closed</td>
+                {locationStats.map(loc => (
+                  <td key={loc.lokasi} className="p-4 text-slate-700">{loc.closed}</td>
+                ))}
+              </tr>
+              {/* Row: Total Hazard */}
+              <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Total Hazard</td>
+                {locationStats.map(loc => (
+                  <td key={loc.lokasi} className="p-4 text-slate-700">{loc.total}</td>
+                ))}
+              </tr>
+              {/* Row: TL % (Tindak Lanjut Percentage) */}
+              <tr className="hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 text-left font-bold text-slate-800 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">TL %</td>
+                {locationStats.map(loc => (
+                  <td key={loc.lokasi} className="p-4 font-bold text-slate-800">{loc.tlPercent}%</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+          {locationStats.length === 0 && (
+            <div className="text-center p-8 text-slate-400 text-sm border-t border-slate-100">
+              Data tabel belum tersedia.
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

@@ -63,7 +63,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
           <LayoutDashboard size={20} className="shrink-0" /> {showText && <span>Dashboard</span>}
         </Link>
         <Link href="/ibppr" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition">
-          <ShieldAlert size={20} className="shrink-0" /> {showText && <span>Data IBPPR</span>}
+          <ShieldAlert size={20} className="shrink-0" /> {showText && <span>IBPR</span>}
         </Link>
         <Link href="/inspeksi" className="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-white transition">
           <FileText size={20} className="shrink-0" /> {showText && <span>Form Inspeksi</span>}
