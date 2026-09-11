@@ -4,24 +4,31 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer 
 } from "recharts";
-import { FileText, AlertCircle, Clock, CheckCircle2, Flame, ShieldAlert, Activity, Users, Download } from "lucide-react";
+import { FileText, AlertCircle, Clock, CheckCircle2, Flame, ShieldAlert, Activity, Users, Download, MapPin } from "lucide-react";
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ open: 0, onProses: 0, closed: 0, total: 0 });
   
-  // State untuk data yang dikelompokkan berdasarkan Lokasi (Untuk Bar Chart & Tabel Pivot)
-  const [locationStats, setLocationStats] = useState<any[]>([]);
+  // RAW DATA STATES
+  const [rawInspeksi, setRawInspeksi] = useState<any[]>([]);
+  const [rawIbppr, setRawIbppr] = useState<any[]>([]);
+  const [rawIbpprHeader, setRawIbpprHeader] = useState<any[]>([]);
 
+  // FILTER STATES (Terpisah untuk masing-masing chart)
+  const [hazardWilayah, setHazardWilayah] = useState("Semua");
+  const [ibprWilayah, setIbprWilayah] = useState("Semua");
+
+  const [hazardWilayahList, setHazardWilayahList] = useState<string[]>([]);
+  const [ibprWilayahList, setIbprWilayahList] = useState<string[]>([]);
+
+  // COMPUTED STATES FOR UI
+  const [stats, setStats] = useState({ open: 0, onProses: 0, closed: 0, total: 0 });
+  const [hazardChartData, setHazardChartData] = useState<any[]>([]);
+  const [ibprChartData, setIbprChartData] = useState<any[]>([]);
   const [kpiData, setKpiData] = useState({
-    totalPekerja: 0,
-    jamKerjaAman: "0",
-    accident: 0,
-    incident: 0,
-    nearmiss: 0
+    totalPekerja: 0, jamKerjaAman: "0", accident: 0, incident: 0, nearmiss: 0
   });
 
   useEffect(() => {
@@ -29,88 +36,125 @@ export default function DashboardPage() {
     const channel = supabase.channel('realtime-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inspeksi' }, fetchDashboardData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ibppr' }, fetchDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ibppr_header' }, fetchDashboardData)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchDashboardData = async () => {
+    setLoading(true);
     try {
-      const { data: inspeksiData, error: insError } = await supabase.from("inspeksi").select("*");
-      const { data: ibpprData } = await supabase.from("ibppr").select("*");
-      if (insError) throw insError;
+      const { data: insData } = await supabase.from("inspeksi").select("*");
+      const { data: ibpData } = await supabase.from("ibppr").select("*");
+      const { data: ibpHeadData } = await supabase.from("ibppr_header").select("*");
       
-      let open = 0; let onProses = 0; let closed = 0;
-      let countAccident = 0; let countIncident = 0; let countNearmiss = 0;
-      
-      // Objek sementara untuk mengelompokkan data berdasarkan Lokasi
-      const locMap: Record<string, { open: number; onProses: number; closed: number; total: number }> = {};
-
-      inspeksiData?.forEach((item) => {
-        // 1. Hitung Status Utama
-        if (item.status === "Open") open++;
-        else if (item.status === "On Proses") onProses++;
-        else if (item.status === "Closed") closed++;
-
-        // 2. Hitung KPI Accident/Incident
-        const kategoriText = (item.kategori || "").toLowerCase();
-        const risk = item.risk_level;
-
-        if (kategoriText.includes("accident") || kategoriText.includes("kecelakaan")) countAccident++;
-        else if (kategoriText.includes("incident") || kategoriText.includes("insiden")) countIncident++;
-        else if (kategoriText.includes("nearmiss") || kategoriText.includes("hampir")) countNearmiss++;
-        else {
-          if (risk === "Tinggi") countIncident++;
-          else if (risk === "Sedang") countNearmiss++;
-        }
-
-        // 3. Kelompokkan berdasarkan Lokasi (Untuk Chart & Table baru)
-        const loc = item.lokasi ? item.lokasi.toUpperCase() : "TIDAK DIKETAHUI";
-        if (!locMap[loc]) {
-          locMap[loc] = { open: 0, onProses: 0, closed: 0, total: 0 };
-        }
-        locMap[loc].total++;
-        if (item.status === "Open") locMap[loc].open++;
-        else if (item.status === "On Proses") locMap[loc].onProses++;
-        else if (item.status === "Closed") locMap[loc].closed++;
-      });
-
-      // Konversi objek lokasi menjadi array agar bisa dibaca oleh Recharts & Table
-      const locArray = Object.keys(locMap).map(key => ({
-        lokasi: key,
-        ...locMap[key],
-        tlPercent: locMap[key].total > 0 ? Math.round((locMap[key].closed / locMap[key].total) * 100) : 0
-      })).sort((a, b) => a.lokasi.localeCompare(b.lokasi)); // Urutkan sesuai abjad
-
-      setLocationStats(locArray);
-
-      // Kalkulasi Pekerja & Jam Kerja
-      const jumlahIbpr = ibpprData?.length || 0;
-      const jumlahInspeksi = inspeksiData?.length || 0;
-      const totalPekerjaDinamis = 25 + (jumlahIbpr * 15) + (jumlahInspeksi * 2);
-      let totalJamKerja = totalPekerjaDinamis * 8 * 150;
-      if (countAccident > 0) totalJamKerja = totalPekerjaDinamis * 8 * 5; 
-
-      setStats({ open, onProses, closed, total: jumlahInspeksi });
-      setKpiData({
-        totalPekerja: totalPekerjaDinamis,
-        jamKerjaAman: totalJamKerja.toLocaleString('id-ID'),
-        accident: countAccident,
-        incident: countIncident,
-        nearmiss: countNearmiss
-      });
-
+      setRawInspeksi(insData || []);
+      setRawIbppr(ibpData || []);
+      setRawIbpprHeader(ibpHeadData || []);
     } catch (error) {
-      console.error("Gagal memuat data dashboard");
+      console.error("Gagal memuat data dashboard", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const donutData = [
-    { name: "Open", value: stats.open, color: "#f43f5e" },       // Merah/Rose
-    { name: "In Progress", value: stats.onProses, color: "#f59e0b" }, // Kuning/Amber
-    { name: "Closed", value: stats.closed, color: "#10b981" },     // Hijau/Emerald
-  ];
+  useEffect(() => {
+    if (loading) return;
+
+    // ==========================================
+    // 1. HITUNG GLOBAL KPI (Tidak terpengaruh filter)
+    // ==========================================
+    let open = 0, onProses = 0, closed = 0;
+    let countAccident = 0, countIncident = 0, countNearmiss = 0;
+
+    rawInspeksi.forEach((item) => {
+      if (item.status === "Open") open++;
+      else if (item.status === "On Proses") onProses++;
+      else if (item.status === "Closed") closed++;
+
+      const kategoriText = (item.kategori || "").toLowerCase();
+      const risk = item.risk_level;
+
+      if (kategoriText.includes("accident") || kategoriText.includes("kecelakaan")) countAccident++;
+      else if (kategoriText.includes("incident") || kategoriText.includes("insiden")) countIncident++;
+      else if (kategoriText.includes("nearmiss") || kategoriText.includes("hampir")) countNearmiss++;
+      else {
+        if (risk === "Tinggi") countIncident++;
+        else if (risk === "Sedang") countNearmiss++;
+      }
+    });
+
+    const jumlahIbpr = rawIbppr.length;
+    const jumlahInspeksi = rawInspeksi.length;
+    const totalPekerjaDinamis = (jumlahIbpr === 0 && jumlahInspeksi === 0) ? 0 : 25 + (jumlahIbpr * 15) + (jumlahInspeksi * 2);
+    
+    let totalJamKerja = totalPekerjaDinamis * 8 * 150;
+    if (countAccident > 0) totalJamKerja = totalPekerjaDinamis * 8 * 5; 
+
+    setStats({ open, onProses, closed, total: jumlahInspeksi });
+    setKpiData({
+      totalPekerja: totalPekerjaDinamis,
+      jamKerjaAman: totalJamKerja.toLocaleString('id-ID'),
+      accident: countAccident,
+      incident: countIncident,
+      nearmiss: countNearmiss
+    });
+
+
+    // ==========================================
+    // 2. HITUNG DATA CHART HAZARD (Terpengaruh hazardWilayah)
+    // ==========================================
+    const hList = rawInspeksi.map(i => i.lokasi?.toUpperCase() || "TIDAK DIKETAHUI").filter((v,i,a) => a.indexOf(v)===i).sort();
+    setHazardWilayahList(hList);
+
+    const hazardMap: Record<string, any> = {};
+    rawInspeksi.forEach(item => {
+      const loc = item.lokasi ? item.lokasi.toUpperCase() : "TIDAK DIKETAHUI";
+      
+      // Lewati jika filter aktif dan tidak cocok
+      if (hazardWilayah !== "Semua" && loc !== hazardWilayah) return;
+
+      if (!hazardMap[loc]) hazardMap[loc] = { lokasi: loc, open: 0, onProses: 0, closed: 0, total: 0 };
+      hazardMap[loc].total++;
+      if (item.status === "Open") hazardMap[loc].open++;
+      else if (item.status === "On Proses") hazardMap[loc].onProses++;
+      else if (item.status === "Closed") hazardMap[loc].closed++;
+    });
+
+    const hData = Object.keys(hazardMap).map(key => ({
+      ...hazardMap[key],
+      tlPercent: hazardMap[key].total > 0 ? Math.round((hazardMap[key].closed / hazardMap[key].total) * 100) : 0
+    })).sort((a, b) => a.lokasi.localeCompare(b.lokasi));
+    
+    setHazardChartData(hData);
+
+
+    // ==========================================
+    // 3. HITUNG DATA CHART IBPR (Terpengaruh ibprWilayah)
+    // ==========================================
+    const iList = rawIbpprHeader.map(h => h.wilayah?.toUpperCase() || "TIDAK DIKETAHUI").filter((v,i,a) => a.indexOf(v)===i).sort();
+    setIbprWilayahList(iList);
+
+    const ibprMap: Record<string, any> = {};
+    rawIbppr.forEach(item => {
+      const header = rawIbpprHeader.find(h => h.id === item.header_id);
+      const loc = header?.wilayah ? header.wilayah.toUpperCase() : "TIDAK DIKETAHUI";
+      
+      // Lewati jika filter aktif dan tidak cocok
+      if (ibprWilayah !== "Semua" && loc !== ibprWilayah) return;
+
+      if (!ibprMap[loc]) ibprMap[loc] = { wilayah: loc, total: 0 };
+      ibprMap[loc].total++; // Hitung total item risiko IBPR di wilayah ini
+    });
+
+    const iData = Object.keys(ibprMap).map(key => ({
+      ...ibprMap[key]
+    })).sort((a, b) => a.wilayah.localeCompare(b.wilayah));
+    
+    setIbprChartData(iData);
+
+  }, [rawInspeksi, rawIbppr, rawIbpprHeader, hazardWilayah, ibprWilayah, loading]);
+
 
   if (loading) {
     return <div className="p-8 flex justify-center items-center h-[80vh] text-blue-600 font-semibold animate-pulse">Memuat Dashboard...</div>;
@@ -119,14 +163,12 @@ export default function DashboardPage() {
   return (
     <div className="p-4 md:p-8 space-y-6 min-h-screen bg-[#F8FAFC] font-sans print:bg-white print:p-0">
       
-      {/* JUDUL DAN FILTER */}
+      {/* JUDUL GLOBAL */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
-        <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
-        <div className="hidden md:flex items-center gap-2">
-          <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-semibold transition-colors shadow-sm flex items-center gap-2">
-            <Download size={16} /> Export
-          </button>
-        </div>
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard Overview</h1>
+        <button onClick={() => window.print()} className="hidden md:flex bg-blue-600 hover:bg-blue-700 text-white px-5 h-10 rounded-lg text-sm font-semibold transition-colors shadow-sm items-center gap-2 shrink-0">
+          <Download size={16} /> Export PDF
+        </button>
       </div>
 
       {/* BARIS 1: KARTU SUMMARY & KPI */}
@@ -207,106 +249,152 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* BARIS 2: BAR CHART (Hazard Report Grouped by Location) */}
-      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)]">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-base font-bold text-slate-800">Hazard Report</h2>
-          <select className="border border-slate-200 text-slate-500 text-sm px-3 py-1.5 rounded-md outline-none bg-white">
-            <option>Wilayah</option>
-          </select>
-        </div>
+      {/* BARIS 2: KUMPULAN CHART (2 CHART SEJAJAR DI LAYAR LEBAR) */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         
-        {locationStats.length === 0 ? (
-          <div className="h-[350px] flex items-center justify-center text-slate-400 text-sm">Tidak ada data hazard per lokasi.</div>
-        ) : (
-          <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={locationStats} margin={{ top: 20, right: 10, left: -20, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="lokasi" 
-                  angle={-15} 
-                  textAnchor="end" 
-                  tick={{fontSize: 10, fill: '#64748b'}} 
-                  interval={0} 
-                  axisLine={{stroke: '#e2e8f0'}}
-                  tickLine={false}
-                />
-                <YAxis 
-                  tick={{fontSize: 11, fill: '#64748b'}} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  allowDecimals={false}
-                />
-                <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
-                <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: '20px', fontSize: '12px' }} iconType="circle" />
-                
-                <Bar dataKey="open" name="Open" fill="#f43f5e" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                <Bar dataKey="onProses" name="Work in Progress" fill="#f59e0b" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                <Bar dataKey="closed" name="Close" fill="#10b981" radius={[2, 2, 0, 0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
+        {/* ===================== CHART 1: HAZARD REPORT ===================== */}
+        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] flex flex-col h-[500px]">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-base font-bold text-slate-800">Hazard Report Chart</h2>
+            
+            {/* Filter Khusus Hazard */}
+            <div className="relative w-40 sm:w-48">
+              <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                <MapPin size={14} />
+              </div>
+              <select 
+                value={hazardWilayah}
+                onChange={(e) => setHazardWilayah(e.target.value)}
+                className="pl-8 h-9 w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-md shadow-sm outline-none focus:border-blue-500 cursor-pointer appearance-none"
+              >
+                <option value="Semua">Semua Wilayah</option>
+                {hazardWilayahList.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            </div>
           </div>
-        )}
+          
+          <div className="flex-1 w-full relative">
+            {hazardChartData.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-sm">
+                <MapPin size={40} className="text-slate-200 mb-3" />
+                <p>Tidak ada data Hazard.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hazardChartData} margin={{ top: 10, right: 10, left: -20, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="lokasi" angle={-25} textAnchor="end" tick={{fontSize: 10, fill: '#64748b'}} interval={0} axisLine={{stroke: '#e2e8f0'}} tickLine={false} />
+                  <YAxis tick={{fontSize: 11, fill: '#64748b'}} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
+                  <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: '15px', fontSize: '11px' }} iconType="circle" />
+                  <Bar dataKey="open" name="Open" fill="#f43f5e" radius={[2, 2, 0, 0]} maxBarSize={35} />
+                  <Bar dataKey="onProses" name="Work in Progress" fill="#f59e0b" radius={[2, 2, 0, 0]} maxBarSize={35} />
+                  <Bar dataKey="closed" name="Close" fill="#10b981" radius={[2, 2, 0, 0]} maxBarSize={35} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+
+        {/* ===================== CHART 2: IBPR REPORT ===================== */}
+        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)] flex flex-col h-[500px]">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-base font-bold text-slate-800">IBPR Chart</h2>
+            
+            {/* Filter Khusus IBPR */}
+            <div className="relative w-40 sm:w-48">
+              <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                <MapPin size={14} />
+              </div>
+              <select 
+                value={ibprWilayah}
+                onChange={(e) => setIbprWilayah(e.target.value)}
+                className="pl-8 h-9 w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-md shadow-sm outline-none focus:border-blue-500 cursor-pointer appearance-none"
+              >
+                <option value="Semua">Semua Wilayah</option>
+                {ibprWilayahList.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex-1 w-full relative">
+            {ibprChartData.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-sm">
+                <FileText size={40} className="text-slate-200 mb-3" />
+                <p>Tidak ada data IBPR.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={ibprChartData} margin={{ top: 10, right: 10, left: -20, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="wilayah" angle={-25} textAnchor="end" tick={{fontSize: 10, fill: '#64748b'}} interval={0} axisLine={{stroke: '#e2e8f0'}} tickLine={false} />
+                  <YAxis tick={{fontSize: 11, fill: '#64748b'}} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
+                  <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: '15px', fontSize: '11px' }} iconType="circle" />
+                  
+                  {/* Hanya menggunakan 1 warna Bar untuk menunjukkan Total Temuan/Identifikasi IBPR */}
+                  <Bar dataKey="total" name="Total Identifikasi Risiko IBPR" fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={45} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
       </div>
 
-      {/* BARIS 3: TABEL HAZARD STATUS (Pivoted Table) */}
+      {/* BARIS 3: TABEL HAZARD STATUS (Memakai data yang sama dengan Hazard Chart) */}
       <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.04)]">
-        <h2 className="text-base font-bold text-slate-800 mb-4">Hazard Status</h2>
+        <h2 className="text-base font-bold text-slate-800 mb-4">Hazard Status Details</h2>
         
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto border border-slate-100 rounded-lg">
           <table className="w-full text-sm text-center border-collapse">
-            <thead>
+            <thead className="bg-slate-50">
               <tr className="border-b border-slate-200">
-                <th className="p-4 text-left font-semibold text-slate-600 min-w-[120px] bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]"></th>
-                {locationStats.map(loc => (
-                  <th key={loc.lokasi} className="p-4 font-semibold text-slate-600 text-xs min-w-[100px] leading-tight">
+                <th className="p-4 text-left font-semibold text-slate-600 min-w-[120px] sticky left-0 bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Wilayah / Area</th>
+                {hazardChartData.map(loc => (
+                  <th key={loc.lokasi} className="p-4 font-semibold text-slate-700 text-xs min-w-[100px] leading-tight">
                     {loc.lokasi}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {/* Row: Open Hazard */}
               <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Open Hazard</td>
-                {locationStats.map(loc => (
+                {hazardChartData.map(loc => (
                   <td key={loc.lokasi} className="p-4 text-slate-700">{loc.open}</td>
                 ))}
               </tr>
-              {/* Row: In Progress */}
               <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">In Progress</td>
-                {locationStats.map(loc => (
+                {hazardChartData.map(loc => (
                   <td key={loc.lokasi} className="p-4 text-slate-700">{loc.onProses}</td>
                 ))}
               </tr>
-              {/* Row: Closed */}
               <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Closed</td>
-                {locationStats.map(loc => (
+                {hazardChartData.map(loc => (
                   <td key={loc.lokasi} className="p-4 text-slate-700">{loc.closed}</td>
                 ))}
               </tr>
-              {/* Row: Total Hazard */}
               <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 text-left font-medium text-slate-600 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Total Hazard</td>
-                {locationStats.map(loc => (
-                  <td key={loc.lokasi} className="p-4 text-slate-700">{loc.total}</td>
+                {hazardChartData.map(loc => (
+                  <td key={loc.lokasi} className="p-4 font-bold text-slate-800">{loc.total}</td>
                 ))}
               </tr>
-              {/* Row: TL % (Tindak Lanjut Percentage) */}
               <tr className="hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 text-left font-bold text-slate-800 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">TL %</td>
-                {locationStats.map(loc => (
-                  <td key={loc.lokasi} className="p-4 font-bold text-slate-800">{loc.tlPercent}%</td>
+                {hazardChartData.map(loc => (
+                  <td key={loc.lokasi} className="p-4 font-bold text-emerald-600">{loc.tlPercent}%</td>
                 ))}
               </tr>
             </tbody>
           </table>
-          {locationStats.length === 0 && (
-            <div className="text-center p-8 text-slate-400 text-sm border-t border-slate-100">
-              Data tabel belum tersedia.
+          {hazardChartData.length === 0 && (
+            <div className="text-center p-8 text-slate-400 text-sm bg-white">
+              Data tabel belum tersedia untuk wilayah ini.
             </div>
           )}
         </div>

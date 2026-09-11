@@ -5,9 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  ShieldCheck, LogOut, LayoutDashboard, FileSpreadsheet, 
+  LogOut, LayoutDashboard, FileSpreadsheet, 
   ClipboardCheck, AlertOctagon, FolderOpen, MonitorPlay, 
-  Menu, X, Bell, AlertCircle 
+  Menu, X, Bell, AlertCircle, Globe 
 } from "lucide-react";
 
 export default function TopHeader() {
@@ -67,6 +67,7 @@ export default function TopHeader() {
     window.location.href = "/"; 
   };
 
+  // MENU NAVIGASI (Tambahkan link asli web SRI di atribut 'path' yang saat ini berisi "#")
   const navItems = [
     { name: "Dashboard", path: "/", icon: <LayoutDashboard size={18} /> },
     { name: "Hazard Reports", path: "/temuan", icon: <AlertOctagon size={18} /> },
@@ -74,19 +75,19 @@ export default function TopHeader() {
     { name: "IBPR", path: "/ibppr", icon: <FileSpreadsheet size={18} /> },
     { name: "SOP & JSA", path: "/sop", icon: <FolderOpen size={18} /> },
     { name: "Materi Safety", path: "/materi", icon: <MonitorPlay size={18} /> },
+    { name: "SRI", path: "#", icon: <Globe size={18} /> }, // <-- Ganti "#" dengan link web SRI nanti (contoh: "https://web-sri.com")
   ];
 
   return (
     <header className="bg-white text-slate-700 shadow-[0_2px_10px_rgb(0,0,0,0.04)] sticky top-0 z-50 print:hidden border-b border-slate-100">
       <div className="max-w-[1600px] mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
         
-        {/* LOGO KAI STYLE */}
+        {/* LOGO SRI TEXT STYLE */}
         <div className="flex items-center gap-3">
-          <div className="text-blue-600 flex items-center gap-2">
-            <ShieldCheck size={28} className="text-orange-500" />
-            <div className="font-extrabold text-lg tracking-wide flex flex-col leading-tight hidden sm:flex">
-              <span className="text-blue-800">SAFETY PRO</span>
-              <span className="text-[10px] text-slate-400 font-medium">by KAI Properti</span>
+          <div className="text-blue-800 flex items-center gap-2">
+            {/* Teks SRI sementara sebelum ada logo resmi */}
+            <div className="font-black text-2xl tracking-widest leading-tight">
+              SRI
             </div>
           </div>
         </div>
@@ -95,8 +96,12 @@ export default function TopHeader() {
         <nav className="hidden lg:flex items-center gap-6">
           {navItems.map((item) => {
             const isActive = pathname === item.path;
+            
+            // Cek apakah item adalah link eksternal (mengandung http)
+            const isExternal = item.path.startsWith("http");
+
             return (
-              <Link key={item.name} href={item.path}>
+              <Link key={item.name} href={item.path} target={isExternal ? "_blank" : "_self"} rel={isExternal ? "noopener noreferrer" : ""}>
                 <div className={`flex items-center gap-2 text-sm font-semibold transition-colors border-b-2 py-5 mt-[2px] ${
                   isActive ? "text-blue-600 border-blue-600" : "text-slate-500 border-transparent hover:text-slate-800"
                 }`}>
@@ -156,7 +161,7 @@ export default function TopHeader() {
                     ))
                   ) : (
                     <div className="p-8 text-center text-slate-400 flex flex-col items-center">
-                      <ShieldCheck size={32} className="text-slate-300 mb-2" />
+                      <AlertCircle size={32} className="text-slate-300 mb-2" />
                       <p className="text-sm">Bagus! Tidak ada temuan Open.</p>
                     </div>
                   )}
@@ -191,8 +196,15 @@ export default function TopHeader() {
           <nav className="flex flex-col px-4 py-2 space-y-1">
             {navItems.map((item) => {
               const isActive = pathname === item.path;
+              const isExternal = item.path.startsWith("http");
               return (
-                <Link key={item.name} href={item.path} onClick={() => setIsMobileMenuOpen(false)}>
+                <Link 
+                  key={item.name} 
+                  href={item.path} 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  target={isExternal ? "_blank" : "_self"} 
+                  rel={isExternal ? "noopener noreferrer" : ""}
+                >
                   <div className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-bold transition-colors ${
                     isActive ? "text-blue-600 bg-blue-50" : "text-slate-600 hover:bg-slate-50"
                   }`}>

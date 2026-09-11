@@ -62,7 +62,7 @@ export default function InspeksiPage() {
       "Lokasi": row.lokasi, 
       "Kategori": row.kategori,
       "Tindakan Penanggulangan": row.tindakan_penanggulangan, 
-      "Cut Off Date": row.cut_off_date, 
+      "Batas Waktu": row.cut_off_date, // Diubah menjadi Batas Waktu
       "Risk Level": row.risk_level, 
       "Status": row.status, 
       "Kategori Temuan": row.kategori_temuan,
@@ -104,13 +104,11 @@ export default function InspeksiPage() {
     let uploadedFotoUrl = "";
     
     try {
-      // 1. Proses Upload Foto (jika ada)
       if (fotoFile) {
         const options = { maxSizeMB: 1, maxWidthOrHeight: 1280, useWebWorker: true };
         const compressedFile = await imageCompression(fotoFile, options);
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
         
-        // Cek error saat upload foto
         const { error: uploadError } = await supabase.storage.from('inspeksi-photos').upload(fileName, compressedFile);
         if (uploadError) throw new Error("Gagal upload foto: " + uploadError.message);
         
@@ -118,11 +116,9 @@ export default function InspeksiPage() {
         uploadedFotoUrl = publicUrlData.publicUrl;
       }
       
-      // 2. Proses Simpan Data Laporan
       const { error: insertError } = await supabase.from("inspeksi").insert([{ ...formData, foto_url: uploadedFotoUrl }]);
       if (insertError) throw new Error("Gagal simpan laporan ke database: " + insertError.message);
 
-      // 3. Jika semua aman, reset form
       alert("Laporan berhasil disimpan secara permanen!");
       setIsDialogOpen(false);
       
@@ -130,9 +126,8 @@ export default function InspeksiPage() {
       setKategoriOption("UNSAFE ACTION");
       setFotoFile(null);
       
-      fetchData(); // Refresh tabel
+      fetchData(); 
     } catch (error: any) {
-      // Menampilkan pesan error yang sesungguhnya!
       alert("TERJADI KESALAHAN:\n" + error.message);
     } finally {
       setIsSubmitting(false);
@@ -264,7 +259,6 @@ export default function InspeksiPage() {
 
                   <div className="space-y-1 pt-2 border-t border-slate-100">
                     <label className="text-xs font-semibold text-slate-600 block">Bukti Foto / Dokumentasi Lapangan</label>
-                    {/* PERBAIKAN: Menambahkan capture="environment" untuk buka kamera hp otomatis */}
                     <Input 
                       type="file" 
                       accept="image/png, image/jpeg, image/jpg" 
@@ -287,7 +281,6 @@ export default function InspeksiPage() {
         </div>
       </div>
 
-      {/* KOP DOKUMEN CETAK */}
       <div className="hidden print:block border-2 border-black p-0 text-xs md:text-sm font-semibold mb-4">
         <div className="grid grid-cols-12 border-b-2 border-black">
           <div className="col-span-3 border-r-2 border-black p-4 flex items-center justify-center">
@@ -310,7 +303,6 @@ export default function InspeksiPage() {
         </div>
       </div>
 
-      {/* TABEL DATA INSPEKSI */}
       <div className="w-full overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm print:rounded-none print:border-2 print:border-black print:shadow-none">
         <Table className="min-w-[1500px] text-sm print:text-xs">
           <TableHeader className="bg-slate-50 print:bg-blue-100">
@@ -318,11 +310,12 @@ export default function InspeksiPage() {
               <TableHead className="border-b print:border-2 print:border-black text-center w-[50px]">NO</TableHead>
               <TableHead className="border-b print:border-2 print:border-black text-center w-[100px]">Tgl Temuan</TableHead>
               <TableHead className="border-b print:border-2 print:border-black text-center w-[120px]">Bukti Foto</TableHead>
-              <TableHead className="border-b print:border-2 print:border-black">Temuan / Pelanggaran</TableHead>
-              <TableHead className="border-b print:border-2 print:border-black">Lokasi</TableHead>
+              <TableHead className="border-b print:border-2 print:border-black min-w-[250px] max-w-[350px]">Temuan / Pelanggaran</TableHead>
+              <TableHead className="border-b print:border-2 print:border-black w-[150px]">Lokasi</TableHead>
               <TableHead className="border-b print:border-2 print:border-black">Kategori</TableHead>
-              <TableHead className="border-b print:border-2 print:border-black">Tindakan Penanggulangan</TableHead>
-              <TableHead className="border-b print:border-2 print:border-black text-center">Cut Off Date</TableHead>
+              <TableHead className="border-b print:border-2 print:border-black min-w-[250px] max-w-[350px]">Tindakan Penanggulangan</TableHead>
+              {/* PERUBAHAN: Mengganti teks Cut Off Date menjadi Batas Waktu */}
+              <TableHead className="border-b print:border-2 print:border-black text-center">Batas Waktu</TableHead>
               <TableHead className="border-b print:border-2 print:border-black text-center">Risiko</TableHead>
               <TableHead className="border-b print:border-2 print:border-black text-center">Status</TableHead>
               <TableHead className="border-b print:border-2 print:border-black text-center">Jenis Pekerjaan</TableHead>
@@ -339,9 +332,9 @@ export default function InspeksiPage() {
             ) : (
               filteredData.map((row, index) => (
                 <TableRow key={row.id} className="hover:bg-slate-50/50">
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center">{index + 1}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center">{row.tanggal_temuan}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center">
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center align-top">{index + 1}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center align-top">{row.tanggal_temuan}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center align-top">
                     {row.foto_url ? (
                       <img 
                         src={row.foto_url} 
@@ -352,17 +345,23 @@ export default function InspeksiPage() {
                       /> 
                     ) : <span className="text-xs text-slate-400 italic">Tanpa Foto</span>}
                   </TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-slate-800 font-medium">{row.temuan}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3">{row.lokasi}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3">
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-slate-800 font-medium align-top">
+                    <div className="min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-4" title={row.temuan}>
+                      {row.temuan}
+                    </div>
+                  </TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 align-top">{row.lokasi}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 align-top">
                     <span className="bg-slate-100 px-2 py-1 rounded text-xs font-semibold text-slate-600 uppercase border border-slate-200">{row.kategori}</span>
                   </TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-slate-600">
-                    {row.tindakan_penanggulangan ? row.tindakan_penanggulangan : <span className="text-xs text-slate-400 italic">Belum ditindaklanjuti</span>}
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-slate-600 align-top">
+                    <div className="min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-4" title={row.tindakan_penanggulangan}>
+                      {row.tindakan_penanggulangan ? row.tindakan_penanggulangan : <span className="text-xs text-slate-400 italic">Belum ditindaklanjuti</span>}
+                    </div>
                   </TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center text-red-600 font-medium">{row.cut_off_date}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-bold">
-                    <span className={`px-2.5 py-1 rounded-full text-xs border ${
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center text-red-600 font-medium align-top">{row.cut_off_date}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-bold align-top">
+                    <span className={`px-2.5 py-1 rounded-full text-xs border whitespace-nowrap ${
                       row.risk_level === 'Tinggi' ? 'bg-red-50 text-red-700 border-red-200' : 
                       row.risk_level === 'Sedang' ? 'bg-orange-50 text-orange-700 border-orange-200' : 
                       row.risk_level === 'Rendah' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
@@ -371,9 +370,9 @@ export default function InspeksiPage() {
                       {row.risk_level}
                     </span>
                   </TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-bold">{row.status}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center">{row.kategori_temuan}</TableCell>
-                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-semibold text-blue-700">{row.pic}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-bold align-top">{row.status}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center align-top">{row.kategori_temuan}</TableCell>
+                  <TableCell className="border-b print:border-2 print:border-black p-3 text-center font-semibold text-blue-700 align-top">{row.pic}</TableCell>
                 </TableRow>
               ))
             )}

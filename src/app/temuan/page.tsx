@@ -14,7 +14,7 @@ export default function ReviewTemuanPage() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [filter, setFilter] = useState("Semua"); 
+  const [filter, setFilter] = useState("Open"); 
   const [searchQuery, setSearchQuery] = useState("");
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -148,7 +148,6 @@ export default function ReviewTemuanPage() {
 
             <div className="space-y-1.5 pt-2 border-t border-slate-100">
               <label className="text-sm font-semibold text-slate-700 block">Bukti Foto Perbaikan (After)</label>
-              {/* PERBAIKAN: Menambahkan capture="environment" untuk kamera hp */}
               <Input 
                 type="file" 
                 accept="image/png, image/jpeg, image/jpg" 
@@ -208,11 +207,14 @@ export default function ReviewTemuanPage() {
         <Table className="min-w-[1200px] text-sm">
           <TableHeader className="bg-slate-50 border-b border-slate-200">
             <TableRow>
-              <TableHead className="w-[110px] font-bold text-slate-700">Tgl & Limit</TableHead>
+              <TableHead className="w-[140px] font-bold text-slate-700">Tgl Temuan & Batas Waktu</TableHead>
               <TableHead className="w-[120px] font-bold text-slate-700 text-center">Foto Temuan<br/><span className="text-[10px] font-normal text-slate-500">(Before)</span></TableHead>
               <TableHead className="w-[120px] font-bold text-slate-700 text-center">Foto Perbaikan<br/><span className="text-[10px] font-normal text-slate-500">(After)</span></TableHead>
-              <TableHead className="font-bold text-slate-700">Deskripsi & Lokasi</TableHead>
-              <TableHead className="w-[220px] font-bold text-slate-700">Tindakan Penanggulangan</TableHead>
+              <TableHead className="min-w-[200px] max-w-[300px] font-bold text-slate-700">Deskripsi & Lokasi</TableHead>
+              
+              {/* Menambahkan pembatas lebar juga pada header Tindakan Penanggulangan */}
+              <TableHead className="min-w-[200px] max-w-[300px] font-bold text-slate-700">Tindakan Penanggulangan</TableHead>
+              
               <TableHead className="w-[120px] font-bold text-slate-700 text-center">PIC & Risiko</TableHead>
               <TableHead className="w-[100px] font-bold text-slate-700 text-center">Status</TableHead>
               <TableHead className="w-[120px] font-bold text-slate-700 text-center">Aksi (PIC)</TableHead>
@@ -258,16 +260,30 @@ export default function ReviewTemuanPage() {
                   </TableCell>
 
                   <TableCell className="align-top py-4">
-                    <div className="font-semibold text-slate-800 mb-1 leading-tight">{row.temuan}</div>
-                    <div className="text-xs text-slate-500 mb-2">Lokasi: <span className="font-medium text-slate-700">{row.lokasi}</span></div>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 uppercase tracking-wider border border-slate-200">{row.kategori}</span>
+                    <div className="font-semibold text-slate-800 mb-1 leading-tight min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-3" title={row.temuan}>
+                      {row.temuan}
+                    </div>
+                    <div className="text-xs text-slate-500 mb-2 min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-2" title={row.lokasi}>
+                      Lokasi: <span className="font-medium text-slate-700">{row.lokasi}</span>
+                    </div>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 uppercase tracking-wider border border-slate-200">
+                      {row.kategori}
+                    </span>
                   </TableCell>
                   
+                  {/* PENERAPAN PEMBATAS TEKS PADA TINDAKAN PENANGGULANGAN */}
                   <TableCell className="align-top py-4">
                     {row.tindakan_penanggulangan ? (
-                      <div className="text-slate-700 text-sm bg-blue-50/50 p-2 rounded-md border border-blue-100">{row.tindakan_penanggulangan}</div>
+                      <div 
+                        className="text-slate-700 text-sm bg-blue-50/50 p-2 rounded-md border border-blue-100 min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-3"
+                        title={row.tindakan_penanggulangan}
+                      >
+                        {row.tindakan_penanggulangan}
+                      </div>
                     ) : (
-                      <div className="text-[11px] text-slate-400 italic bg-slate-50 p-2 rounded-md border border-slate-100">Belum ada tindakan. PIC harus mengisi ini.</div>
+                      <div className="text-[11px] text-slate-400 italic bg-slate-50 p-2 rounded-md border border-slate-100 min-w-[200px] max-w-[300px]">
+                        Belum ada tindakan. PIC harus mengisi ini.
+                      </div>
                     )}
                   </TableCell>
 
