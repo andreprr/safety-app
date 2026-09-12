@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs'; // Ubah library ke ExcelJS untuk dukungan styling warna
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,16 +13,74 @@ import {
   Search, FolderOpen, ArrowLeft, Calendar, MapPin, Building
 } from "lucide-react";
 
+// --- CSS KHUSUS UNTUK PRINT PDF AGAR PAS DI KERTAS ---
+const printStyles = `
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 8mm;
+    }
+    
+    html, body {
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background-color: #ffffff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .no-print {
+      display: none !important;
+    }
+
+    /* Memaksa tabel agar menyesuaikan dengan lebar kertas */
+    .print-table-container {
+      width: 100% !important;
+      overflow: visible !important;
+    }
+
+    table {
+      width: 100% !important;
+      max-width: 100% !important;
+      border-collapse: collapse !important;
+      table-layout: fixed !important; 
+    }
+
+    /* Mengurangi ukuran font dan padding saat print agar tabel yang panjang bisa muat */
+    th, td {
+      font-size: 6.5pt !important; 
+      padding: 2px !important;
+      word-wrap: break-word !important;
+    }
+
+    /* Mencegah baris terpotong di tengah halaman */
+    tr {
+      page-break-inside: avoid !important;
+    }
+  }
+`;
+
 // --- FUNGSI HELPER UNTUK WARNA (DIJAMIN 100% BERUBAH DENGAN INLINE STYLE) ---
 const getRiskStyles = (probabilitas: any, dampak: any) => {
   const value = Number(probabilitas || 0) * Number(dampak || 0);
 
-  if (value >= 17) return { className: "text-white font-extrabold", bgColor: "#DC2626" };
-  if (value >= 10) return { className: "text-black font-extrabold", bgColor: "#F4B183" };
-  if (value >= 5) return { className: "text-black font-extrabold", bgColor: "#FACC15" };
-  if (value >= 1) return { className: "text-white font-extrabold", bgColor: "#22C55E" };
+  if (value >= 17) return { className: "text-white font-extrabold", bgColor: "#DC2626" }; // Merah
+  if (value >= 10) return { className: "text-black font-extrabold", bgColor: "#F4B183" }; // Oranye
+  if (value >= 5) return { className: "text-black font-extrabold", bgColor: "#FACC15" };  // Kuning
+  if (value >= 1) return { className: "text-white font-extrabold", bgColor: "#22C55E" };  // Hijau
 
   return { className: "text-slate-400 font-medium", bgColor: "#F8FAFC" }; // Kosong
+};
+
+// Fungsi warna khusus untuk ExcelJS (format ARGB)
+const getExcelRiskColor = (probabilitas: any, dampak: any) => {
+  const value = Number(probabilitas || 0) * Number(dampak || 0);
+  if (value >= 17) return { bg: "FFDC2626", font: "FFFFFFFF" };
+  if (value >= 10) return { bg: "FFF4B183", font: "FF000000" };
+  if (value >= 5) return { bg: "FFFACC15", font: "FF000000" };
+  if (value >= 1) return { bg: "FF22C55E", font: "FFFFFFFF" };
+  return { bg: "FFFFFFFF", font: "FF000000" };
 };
 
 const getRiskValue = (probabilitas: any, dampak: any) => {
@@ -44,6 +102,7 @@ export default function IbprPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const [headerData, setHeaderData] = useState({
     no_dokumen: "", level_dokumen: "", revisi: "", tgl_berlaku: "",
@@ -79,14 +138,7 @@ export default function IbprPage() {
     setIsSubmittingHeader(true);
     try {
       const { error } = await supabase.from('ibppr_header').insert([headerData]);
-
-      if (error) {
-        alert("GAGAL MEMBUAT PROYEK:\n" + error.message);
-        console.log("Detail Error:", error);
-        setIsSubmittingHeader(false);
-        return;
-      }
-
+      if (error) throw new Error(error.message);
       alert("Proyek IBPR Baru Berhasil Dibuat!");
       setIsHeaderOpen(false);
       setHeaderData({ no_dokumen: "", level_dokumen: "", revisi: "", tgl_berlaku: "", wilayah: "", unit: "", project: "", dibuat_oleh: "", diperiksa_oleh: "", tanggal: "" });
@@ -127,25 +179,15 @@ export default function IbprPage() {
     setIsSubmitting(true);
     try {
       const payload = { ...formData, header_id: selectedProject.id };
-
       if (editId) {
         const { error } = await supabase.from('ibppr').update(payload).eq('id', editId);
-        if (error) {
-          alert("GAGAL UPDATE IBPR:\n" + error.message);
-          setIsSubmitting(false);
-          return;
-        }
+        if (error) throw new Error(error.message);
         alert("Data IBPR berhasil diperbarui!");
       } else {
         const { error } = await supabase.from('ibppr').insert([payload]);
-        if (error) {
-          alert("GAGAL SIMPAN IBPR:\n" + error.message);
-          setIsSubmitting(false);
-          return;
-        }
+        if (error) throw new Error(error.message);
         alert("Data IBPR ditambahkan!");
       }
-
       setIsDialogOpen(false);
       resetForm();
       fetchHazards(selectedProject.id);
@@ -157,14 +199,7 @@ export default function IbprPage() {
   };
 
   const handleEditClick = (row: any) => {
-    setFormData({
-      kode_id: row.kode_id, bahaya: row.bahaya, penjelasan_kontrol: row.penjelasan_kontrol,
-      referensi_kontrol: row.referensi_kontrol, efektivitas: row.efektivitas, posisi_pj_kontrol: row.posisi_pj_kontrol,
-      penjelasan_risiko: row.penjelasan_risiko, c_probabilitas: row.c_probabilitas, c_dampak: row.c_dampak,
-      penjelasan_tindak_lanjut: row.penjelasan_tindak_lanjut, referensi_tindak_lanjut: row.referensi_tindak_lanjut,
-      posisi_pj_tindak_lanjut: row.posisi_pj_tindak_lanjut, tanggal_selesai: row.tanggal_selesai,
-      e_probabilitas: row.e_probabilitas, e_dampak: row.e_dampak
-    });
+    setFormData({ ...row });
     setEditId(row.id);
     setIsDialogOpen(true);
   };
@@ -179,24 +214,122 @@ export default function IbprPage() {
     }
   };
 
-  const exportToExcel = () => {
-    const exportData = hazards.map((row, index) => ({
-      "No": index + 1, "ID Bahaya": row.kode_id, "Bahaya (UA/UC)": row.bahaya,
-      "Penjelasan Kontrol": row.penjelasan_kontrol, "Referensi Kontrol": row.referensi_kontrol,
-      "Efektivitas": row.efektivitas, "PIC Kontrol": row.posisi_pj_kontrol,
-      "Penjelasan Risiko": row.penjelasan_risiko, "Probabilitas Awal": row.c_probabilitas,
-      "Dampak Awal": row.c_dampak,
-      "Nilai Risiko Awal": getRiskValue(row.c_probabilitas, row.c_dampak),
-      "Rencana Tindak Lanjut": row.penjelasan_tindak_lanjut, "Referensi TL": row.referensi_tindak_lanjut,
-      "PIC TL": row.posisi_pj_tindak_lanjut, "Tgl Selesai": row.tanggal_selesai,
-      "Probabilitas Akhir": row.e_probabilitas, "Dampak Akhir": row.e_dampak,
-      "Nilai Risiko Akhir": getRiskValue(row.e_probabilitas, row.e_dampak)
-    }));
+  // --- FUNGSI EXPORT KE EXCEL DENGAN EXCELJS (MENYIMPAN WARNA & MERGER SEL) ---
+  const exportToExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet("Data_IBPR", { views: [{ showGridLines: true }] });
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Data_IBPR");
-    XLSX.writeFile(wb, `IBPR_${selectedProject.project}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      // Setup Lebar Kolom
+      ws.columns = [
+        { width: 8 }, { width: 25 }, { width: 35 }, { width: 20 }, // A-D
+        { width: 5 }, { width: 5 }, { width: 5 }, { width: 20 }, // E-H
+        { width: 25 }, { width: 8 }, { width: 8 }, { width: 10 }, // I-L
+        { width: 35 }, { width: 20 }, { width: 20 }, { width: 15 }, // M-P
+        { width: 8 }, { width: 8 }, { width: 10 }                 // Q-S
+      ];
+
+      // Baris Header 1
+      const row1 = ws.addRow([
+        'A. IDENTIFIKASI BAHAYA', '', 'B. KONTROL YANG ADA', '', '', '', '', '',
+        'C. PENILAIAN RISIKO', '', '', '', 'D. RENCANA TINDAK LANJUT', '', '', '',
+        'E. PENILAIAN RISIKO SETELAH TINDAK LANJUT', '', ''
+      ]);
+      ws.mergeCells('A1:B1'); ws.mergeCells('C1:H1'); ws.mergeCells('I1:L1'); ws.mergeCells('M1:P1'); ws.mergeCells('Q1:S1');
+
+      // Baris Header 2
+      const row2 = ws.addRow([
+        '(1)\nID', '(2)\nBAHAYA', '(1)\nPENJELASAN KONTROL', '(2)\nREFERENSI', '(3)\nEFEKTIVITAS', '', '', '(4)\nPIC',
+        '(1)\nPENJELASAN RISIKO', '(2)\nPROB', '(3)\nDAMPAK', '(4)\nNILAI', '(1)\nRENCANA TINDAK LANJUT', '(2)\nREFERENSI',
+        '(3)\nPIC', '(4)\nTGL SELESAI', '(1)\nPROB', '(2)\nDAMPAK', '(3)\nNILAI'
+      ]);
+      ws.mergeCells('A2:A3'); ws.mergeCells('B2:B3'); ws.mergeCells('C2:C3'); ws.mergeCells('D2:D3');
+      ws.mergeCells('E2:G2'); // Merge Efektivitas T,S,R
+      ws.mergeCells('H2:H3'); ws.mergeCells('I2:I3'); ws.mergeCells('J2:J3'); ws.mergeCells('K2:K3'); ws.mergeCells('L2:L3');
+      ws.mergeCells('M2:M3'); ws.mergeCells('N2:N3'); ws.mergeCells('O2:O3'); ws.mergeCells('P2:P3');
+      ws.mergeCells('Q2:Q3'); ws.mergeCells('R2:R3'); ws.mergeCells('S2:S3');
+
+      // Baris Header 3
+      const row3 = ws.addRow(['', '', '', '', 'T', 'S', 'R', '', '', '', '', '', '', '', '', '', '', '', '']);
+
+      // Styling Headers
+      [row1, row2, row3].forEach((row, i) => {
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.font = { bold: true, name: 'Arial', size: 9 };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = {
+            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+          };
+        });
+      });
+
+      // Warna Header
+      row1.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } }; }); // Orange Muda
+      row2.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } }; // Biru Muda
+      ['E', 'F', 'G'].forEach(col => {
+        row3.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+      });
+      ['L', 'S'].forEach(col => {
+        row2.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }; // Abu-abu
+      });
+
+      // Insert Data ke Excel
+      hazards.forEach((row) => {
+        const cRiskVal = getRiskValue(row.c_probabilitas, row.c_dampak);
+        const eRiskVal = getRiskValue(row.e_probabilitas, row.e_dampak);
+
+        const r = ws.addRow([
+          row.kode_id, row.bahaya, row.penjelasan_kontrol, row.referensi_kontrol,
+          row.efektivitas === 'T' ? 'V' : '', row.efektivitas === 'S' ? 'V' : '', row.efektivitas === 'R' ? 'V' : '',
+          row.posisi_pj_kontrol, row.penjelasan_risiko, row.c_probabilitas, row.c_dampak, cRiskVal,
+          row.penjelasan_tindak_lanjut, row.referensi_tindak_lanjut, row.posisi_pj_tindak_lanjut, row.tanggal_selesai,
+          row.e_probabilitas, row.e_dampak, eRiskVal
+        ]);
+
+        r.eachCell({ includeEmpty: true }, (cell) => {
+          cell.font = { name: 'Arial', size: 9 };
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          cell.border = {
+            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+          };
+        });
+
+        // Center alignment untuk kolom angka/nilai
+        ['A', 'E', 'F', 'G', 'J', 'K', 'L', 'Q', 'R', 'S'].forEach(col => {
+          r.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+
+        // Warnai Cell Risiko Awal (Kolom L)
+        const cColor = getExcelRiskColor(row.c_probabilitas, row.c_dampak);
+        const cellL = r.getCell('L');
+        cellL.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cColor.bg } };
+        cellL.font = { bold: true, color: { argb: cColor.font }, name: 'Arial', size: 9 };
+
+        // Warnai Cell Risiko Akhir (Kolom S)
+        const eColor = getExcelRiskColor(row.e_probabilitas, row.e_dampak);
+        const cellS = r.getCell('S');
+        cellS.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: eColor.bg } };
+        cellS.font = { bold: true, color: { argb: eColor.font }, name: 'Arial', size: 9 };
+      });
+
+      // Proses Download File
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `IBPR_${selectedProject?.project || 'Export'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert('Gagal mengekspor file Excel.');
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
   const filteredProjects = projects.filter(p =>
@@ -292,9 +425,10 @@ export default function IbprPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6 min-h-screen bg-white print:p-0 print:m-0">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print border-b border-slate-100 pb-4">
+    <div className="p-4 md:p-6 space-y-6 min-h-screen bg-white print:p-0 print:m-0 print:space-y-2">
+      <style dangerouslySetInnerHTML={{ __html: printStyles }} />
 
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print border-b border-slate-100 pb-4">
         <div className="flex items-center gap-4">
           <Button onClick={() => setViewMode('list')} variant="outline" className="h-9 w-9 p-0 rounded-full bg-slate-50 hover:bg-slate-100 border-slate-200 shadow-sm" title="Kembali">
             <ArrowLeft size={16} className="text-slate-600" />
@@ -307,10 +441,12 @@ export default function IbprPage() {
 
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => window.print()} variant="outline" className="w-9 h-9 p-0 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100" title="Cetak PDF"><Printer size={16} /></Button>
-          <Button onClick={exportToExcel} variant="outline" className="w-9 h-9 p-0 flex items-center justify-center bg-green-50 text-green-700 hover:bg-green-100 border-green-200" title="Export ke Excel"><FileSpreadsheet size={16} /></Button>
+          <Button onClick={exportToExcel} disabled={isExportingExcel} variant="outline" className="w-9 h-9 p-0 flex items-center justify-center bg-green-50 text-green-700 hover:bg-green-100 border-green-200" title="Export ke Excel">
+            <FileSpreadsheet size={16} />
+          </Button>
 
           <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 h-9"><Plus size={16} /> Tambah Data IBPR</DialogTrigger>
+            <DialogTrigger className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 h-9"><Plus size={16} /> Tambah Data</DialogTrigger>
             <DialogContent className="w-[95vw] sm:max-w-[90vw] md:max-w-[800px] lg:max-w-[1000px] max-h-[90vh] overflow-y-auto p-4 md:p-8 rounded-xl bg-slate-50">
               <DialogHeader><DialogTitle>{editId ? "Edit Risiko IBPR" : "Tambah Risiko IBPR"}</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -339,21 +475,21 @@ export default function IbprPage() {
         </div>
       </div>
 
-      <div className="border-2 border-black p-0 text-xs md:text-sm font-semibold overflow-x-auto print:border-collapse mt-6">
-        <div className="min-w-[800px]">
+      <div className="border-2 border-black p-0 text-xs md:text-sm font-semibold overflow-x-auto mt-6 print:mt-0 print:border-collapse print:w-full">
+        <div className="min-w-[800px] print:min-w-full">
           <div className="grid grid-cols-12 border-b-2 border-black">
-            <div className="col-span-2 border-r-2 border-black p-4 flex items-center justify-center">
+            <div className="col-span-2 border-r-2 border-black p-4 flex items-center justify-center print:p-2">
               <div className="text-blue-800 font-bold text-xl italic tracking-tighter">KAI <span className="text-orange-500 text-sm not-italic block mt-[-5px]">Properti</span></div>
             </div>
-            <div className="col-span-7 border-r-2 border-black p-4 flex items-center justify-center text-lg text-center uppercase">IDENTIFIKASI BAHAYA DAN PENILAIAN RISIKO (IBPR)</div>
-            <div className="col-span-3 p-2 text-xs flex flex-col justify-center space-y-1">
+            <div className="col-span-7 border-r-2 border-black p-4 flex items-center justify-center text-lg text-center uppercase print:text-sm print:p-2">IDENTIFIKASI BAHAYA DAN PENILAIAN RISIKO (IBPR)</div>
+            <div className="col-span-3 p-2 text-[10px] flex flex-col justify-center space-y-1">
               <div className="grid grid-cols-2"><span>NO. KODE DOKUMEN</span><span>: {selectedProject?.no_dokumen}</span></div>
               <div className="grid grid-cols-2"><span>LEVEL DOKUMEN</span><span>: {selectedProject?.level_dokumen}</span></div>
               <div className="grid grid-cols-2"><span>REVISI KE</span><span>: {selectedProject?.revisi}</span></div>
               <div className="grid grid-cols-2"><span>TGL MULAI BERLAKU</span><span>: {selectedProject?.tgl_berlaku}</span></div>
             </div>
           </div>
-          <div className="grid grid-cols-12 text-xs">
+          <div className="grid grid-cols-12 text-[11px]">
             <div className="col-span-6 border-r-2 border-black p-2 space-y-1">
               <div className="grid grid-cols-4"><span className="col-span-1">WILAYAH</span><span className="col-span-3">: {selectedProject?.wilayah}</span></div>
               <div className="grid grid-cols-4"><span className="col-span-1">UNIT</span><span className="col-span-3">: {selectedProject?.unit}</span></div>
@@ -368,40 +504,40 @@ export default function IbprPage() {
         </div>
       </div>
 
-      <div className="w-full overflow-x-auto rounded-none border-2 border-black shadow-sm">
-        <Table className="min-w-[1800px] border-collapse text-xs">
+      <div className="print-table-container w-full overflow-x-auto rounded-none border-2 border-black shadow-sm print:shadow-none print:border-none">
+        <Table className="min-w-[1500px] border-collapse text-xs print:min-w-full">
           <TableHeader>
             <TableRow className="bg-orange-100">
-              <TableHead colSpan={2} className="border-2 border-black text-center font-bold text-black py-4">A. IDENTIFIKASI BAHAYA</TableHead>
-              <TableHead colSpan={6} className="border-2 border-black text-center font-bold text-black py-4">B. KONTROL YANG ADA</TableHead>
-              <TableHead colSpan={4} className="border-2 border-black text-center font-bold text-black py-4">C. PENILAIAN RISIKO</TableHead>
-              <TableHead colSpan={4} className="border-2 border-black text-center font-bold text-black py-4">D. RENCANA TINDAK LANJUT</TableHead>
-              <TableHead colSpan={3} className="border-2 border-black text-center font-bold text-black py-4">E. PENILAIAN RISIKO SETELAH TINDAK LANJUT</TableHead>
+              <TableHead colSpan={2} className="border-2 border-black text-center font-bold text-black py-4 print:py-1">A. IDENTIFIKASI BAHAYA</TableHead>
+              <TableHead colSpan={6} className="border-2 border-black text-center font-bold text-black py-4 print:py-1">B. KONTROL YANG ADA</TableHead>
+              <TableHead colSpan={4} className="border-2 border-black text-center font-bold text-black py-4 print:py-1">C. PENILAIAN RISIKO</TableHead>
+              <TableHead colSpan={4} className="border-2 border-black text-center font-bold text-black py-4 print:py-1">D. RENCANA TINDAK LANJUT</TableHead>
+              <TableHead colSpan={3} className="border-2 border-black text-center font-bold text-black py-4 print:py-1">E. PENILAIAN RISIKO SETELAH TINDAK LANJUT</TableHead>
               <TableHead rowSpan={3} className="no-print border-2 border-black text-center font-bold text-black bg-slate-200 w-[80px]">AKSI</TableHead>
             </TableRow>
             <TableRow className="bg-orange-50 text-center font-bold text-black">
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(1)<br />ID</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(2)<br />BAHAYA</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br />PENJELASAN KONTROL</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br />REFERENSI</TableHead>
-              <TableHead colSpan={3} className="border-2 border-black text-center p-1 bg-blue-100">(3)<br />EFEKTIVITA</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2 bg-blue-100">(4)<br />PIC</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(1)<br />PENJELASAN RISIKO</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br />PROB</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(3)<br />DAMPAK</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(4)<br />NILAI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br />RENCANA TINDAK LANJUT</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br />REFERENSI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(3)<br />PIC</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(4)<br />TGL SELESAI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(1)<br />PROB</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br />DAMPAK</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(3)<br />NILAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[60px] align-top p-1">(1)<br />ID</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-1">(2)<br />BAHAYA</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-1">(1)<br />PENJELASAN KONTROL</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[120px] align-top p-1">(2)<br />REFERENSI</TableHead>
+              <TableHead colSpan={3} className="border-2 border-black text-center p-1 bg-blue-100">(3)<br />EFEKTIVITAS</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[80px] align-top p-1 bg-blue-100">(4)<br />PIC</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-1">(1)<br />PENJELASAN RISIKO</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[40px] align-top p-1">(2)<br />PROB</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[40px] align-top p-1">(3)<br />DAMPAK</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[45px] align-top p-1 bg-slate-200">(4)<br />NILAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-1">(1)<br />RENCANA TINDAK LANJUT</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[120px] align-top p-1">(2)<br />REFERENSI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[80px] align-top p-1">(3)<br />PIC</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[80px] align-top p-1">(4)<br />TGL SELESAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[40px] align-top p-1">(1)<br />PROB</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[40px] align-top p-1">(2)<br />DAMPAK</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[45px] align-top p-1 bg-slate-200">(3)<br />NILAI</TableHead>
             </TableRow>
             <TableRow className="bg-blue-100 text-center font-bold text-black">
-              <TableHead className="border-2 border-black text-center w-[30px] p-1">T</TableHead>
-              <TableHead className="border-2 border-black text-center w-[30px] p-1">S</TableHead>
-              <TableHead className="border-2 border-black text-center w-[30px] p-1">R</TableHead>
+              <TableHead className="border-2 border-black text-center w-[25px] p-1">T</TableHead>
+              <TableHead className="border-2 border-black text-center w-[25px] p-1">S</TableHead>
+              <TableHead className="border-2 border-black text-center w-[25px] p-1">R</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -411,42 +547,38 @@ export default function IbprPage() {
 
               return (
                 <TableRow key={row.id} className="hover:bg-slate-50 transition-colors">
-                  <TableCell className="border-2 border-black p-2 font-medium">{row.kode_id}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.bahaya}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.penjelasan_kontrol}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.referensi_kontrol}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center font-bold text-blue-600">{row.efektivitas === 'T' ? 'V' : ''}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center font-bold text-blue-600">{row.efektivitas === 'S' ? 'V' : ''}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center font-bold text-blue-600">{row.efektivitas === 'R' ? 'V' : ''}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.posisi_pj_kontrol}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.penjelasan_risiko}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center">{row.c_probabilitas}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center">{row.c_dampak}</TableCell>
-
-                  {/* --- NILAI RISIKO AWAL (MENGGUNAKAN INLINE STYLE) --- */}
+                  <TableCell className="border-2 border-black p-1 text-center font-medium">{row.kode_id}</TableCell>
+                  <TableCell className="border-2 border-black p-1">{row.bahaya}</TableCell>
+                  <TableCell className="border-2 border-black p-1">{row.penjelasan_kontrol}</TableCell>
+                  <TableCell className="border-2 border-black p-1">{row.referensi_kontrol}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center font-bold text-blue-600">{row.efektivitas === 'T' ? 'V' : ''}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center font-bold text-blue-600">{row.efektivitas === 'S' ? 'V' : ''}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center font-bold text-blue-600">{row.efektivitas === 'R' ? 'V' : ''}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.posisi_pj_kontrol}</TableCell>
+                  <TableCell className="border-2 border-black p-1">{row.penjelasan_risiko}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.c_probabilitas}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.c_dampak}</TableCell>
                   <TableCell
-                    className={`border-2 border-black p-2 text-center transition-colors ${cRisk.className}`}
+                    className={`border-2 border-black p-1 text-center transition-colors ${cRisk.className}`}
                     style={{ backgroundColor: cRisk.bgColor }}
                   >
                     {getRiskValue(row.c_probabilitas, row.c_dampak)}
                   </TableCell>
 
-                  <TableCell className="border-2 border-black p-2">{row.penjelasan_tindak_lanjut}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.referensi_tindak_lanjut}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.posisi_pj_tindak_lanjut}</TableCell>
-                  <TableCell className="border-2 border-black p-2">{row.tanggal_selesai}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center">{row.e_probabilitas}</TableCell>
-                  <TableCell className="border-2 border-black p-2 text-center">{row.e_dampak}</TableCell>
-
-                  {/* --- NILAI RISIKO AKHIR (MENGGUNAKAN INLINE STYLE) --- */}
+                  <TableCell className="border-2 border-black p-1">{row.penjelasan_tindak_lanjut}</TableCell>
+                  <TableCell className="border-2 border-black p-1">{row.referensi_tindak_lanjut}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.posisi_pj_tindak_lanjut}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.tanggal_selesai}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.e_probabilitas}</TableCell>
+                  <TableCell className="border-2 border-black p-1 text-center">{row.e_dampak}</TableCell>
                   <TableCell
-                    className={`border-2 border-black p-2 text-center transition-colors ${eRisk.className}`}
+                    className={`border-2 border-black p-1 text-center transition-colors ${eRisk.className}`}
                     style={{ backgroundColor: eRisk.bgColor }}
                   >
                     {getRiskValue(row.e_probabilitas, row.e_dampak)}
                   </TableCell>
 
-                  <TableCell className="no-print border-2 border-black p-2 text-center">
+                  <TableCell className="no-print border-2 border-black p-1 text-center">
                     <div className="flex flex-col gap-1 items-center justify-center">
                       <Button onClick={() => handleEditClick(row)} variant="outline" size="sm" className="h-7 w-7 p-0 bg-blue-50 hover:bg-blue-100 border-blue-200" title="Edit Data"><Edit size={14} className="text-blue-600" /></Button>
                       <Button onClick={() => handleDelete(row.id)} variant="outline" size="sm" className="h-7 w-7 p-0 bg-red-50 hover:bg-red-100 border-red-200" title="Hapus Data"><Trash2 size={14} className="text-red-600" /></Button>
