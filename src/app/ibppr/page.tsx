@@ -8,20 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { 
-  Plus, Printer, Settings, FileSpreadsheet, Edit, Trash2, 
+import {
+  Plus, Printer, Settings, FileSpreadsheet, Edit, Trash2,
   Search, FolderOpen, ArrowLeft, Calendar, MapPin, Building
 } from "lucide-react";
 
 // --- FUNGSI HELPER UNTUK WARNA (DIJAMIN 100% BERUBAH DENGAN INLINE STYLE) ---
 const getRiskStyles = (probabilitas: any, dampak: any) => {
   const value = Number(probabilitas || 0) * Number(dampak || 0);
-  
-  if (value >= 17) return { className: "text-white font-extrabold", bgColor: "#DC2626" }; // Merah (Ekstrim)
-  if (value >= 10) return { className: "text-black font-extrabold", bgColor: "#F4B183" }; // Crem/Peach (Tinggi)
-  if (value >= 5) return { className: "text-black font-extrabold", bgColor: "#FACC15" }; // Kuning (Menengah)
-  if (value >= 1) return { className: "text-white font-extrabold", bgColor: "#22C55E" }; // Hijau (Rendah)
-  
+
+  if (value >= 17) return { className: "text-white font-extrabold", bgColor: "#DC2626" };
+  if (value >= 10) return { className: "text-black font-extrabold", bgColor: "#F4B183" };
+  if (value >= 5) return { className: "text-black font-extrabold", bgColor: "#FACC15" };
+  if (value >= 1) return { className: "text-white font-extrabold", bgColor: "#22C55E" };
+
   return { className: "text-slate-400 font-medium", bgColor: "#F8FAFC" }; // Kosong
 };
 
@@ -32,13 +32,13 @@ const getRiskValue = (probabilitas: any, dampak: any) => {
 
 export default function IbprPage() {
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
-  
+
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isHeaderOpen, setIsHeaderOpen] = useState(false);
   const [isSubmittingHeader, setIsSubmittingHeader] = useState(false);
-  
+
   const [hazards, setHazards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -52,7 +52,7 @@ export default function IbprPage() {
 
   const [formData, setFormData] = useState({
     kode_id: "", bahaya: "", penjelasan_kontrol: "", referensi_kontrol: "", efektivitas: "T", posisi_pj_kontrol: "",
-    penjelasan_risiko: "", c_probabilitas: 0, c_dampak: 0, penjelasan_tindak_lanjut: "", referensi_tindak_lanjut: "", 
+    penjelasan_risiko: "", c_probabilitas: 0, c_dampak: 0, penjelasan_tindak_lanjut: "", referensi_tindak_lanjut: "",
     posisi_pj_tindak_lanjut: "", tanggal_selesai: "", e_probabilitas: 0, e_dampak: 0
   });
 
@@ -73,18 +73,18 @@ export default function IbprPage() {
   };
 
   const handleHeaderChange = (e: React.ChangeEvent<HTMLInputElement>) => setHeaderData({ ...headerData, [e.target.name]: e.target.value });
-  
+
   const handleHeaderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingHeader(true);
     try {
       const { error } = await supabase.from('ibppr_header').insert([headerData]);
-      
+
       if (error) {
         alert("GAGAL MEMBUAT PROYEK:\n" + error.message);
         console.log("Detail Error:", error);
         setIsSubmittingHeader(false);
-        return; 
+        return;
       }
 
       alert("Proyek IBPR Baru Berhasil Dibuat!");
@@ -108,7 +108,7 @@ export default function IbprPage() {
     try {
       const { data } = await supabase.from('ibppr').select('*').eq('header_id', headerId).order('created_at', { ascending: false });
       setHazards(data || []);
-    } catch (error) {}
+    } catch (error) { }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -116,7 +116,7 @@ export default function IbprPage() {
   const resetForm = () => {
     setFormData({
       kode_id: "", bahaya: "", penjelasan_kontrol: "", referensi_kontrol: "", efektivitas: "T", posisi_pj_kontrol: "",
-      penjelasan_risiko: "", c_probabilitas: 0, c_dampak: 0, penjelasan_tindak_lanjut: "", referensi_tindak_lanjut: "", 
+      penjelasan_risiko: "", c_probabilitas: 0, c_dampak: 0, penjelasan_tindak_lanjut: "", referensi_tindak_lanjut: "",
       posisi_pj_tindak_lanjut: "", tanggal_selesai: "", e_probabilitas: 0, e_dampak: 0
     });
     setEditId(null);
@@ -126,7 +126,7 @@ export default function IbprPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const payload = { ...formData, header_id: selectedProject.id }; 
+      const payload = { ...formData, header_id: selectedProject.id };
 
       if (editId) {
         const { error } = await supabase.from('ibppr').update(payload).eq('id', editId);
@@ -145,10 +145,10 @@ export default function IbprPage() {
         }
         alert("Data IBPR ditambahkan!");
       }
-      
+
       setIsDialogOpen(false);
       resetForm();
-      fetchHazards(selectedProject.id); 
+      fetchHazards(selectedProject.id);
     } catch (error: any) {
       alert("Terjadi kesalahan: " + error.message);
     } finally {
@@ -158,11 +158,11 @@ export default function IbprPage() {
 
   const handleEditClick = (row: any) => {
     setFormData({
-      kode_id: row.kode_id, bahaya: row.bahaya, penjelasan_kontrol: row.penjelasan_kontrol, 
+      kode_id: row.kode_id, bahaya: row.bahaya, penjelasan_kontrol: row.penjelasan_kontrol,
       referensi_kontrol: row.referensi_kontrol, efektivitas: row.efektivitas, posisi_pj_kontrol: row.posisi_pj_kontrol,
-      penjelasan_risiko: row.penjelasan_risiko, c_probabilitas: row.c_probabilitas, c_dampak: row.c_dampak, 
-      penjelasan_tindak_lanjut: row.penjelasan_tindak_lanjut, referensi_tindak_lanjut: row.referensi_tindak_lanjut, 
-      posisi_pj_tindak_lanjut: row.posisi_pj_tindak_lanjut, tanggal_selesai: row.tanggal_selesai, 
+      penjelasan_risiko: row.penjelasan_risiko, c_probabilitas: row.c_probabilitas, c_dampak: row.c_dampak,
+      penjelasan_tindak_lanjut: row.penjelasan_tindak_lanjut, referensi_tindak_lanjut: row.referensi_tindak_lanjut,
+      posisi_pj_tindak_lanjut: row.posisi_pj_tindak_lanjut, tanggal_selesai: row.tanggal_selesai,
       e_probabilitas: row.e_probabilitas, e_dampak: row.e_dampak
     });
     setEditId(row.id);
@@ -185,11 +185,11 @@ export default function IbprPage() {
       "Penjelasan Kontrol": row.penjelasan_kontrol, "Referensi Kontrol": row.referensi_kontrol,
       "Efektivitas": row.efektivitas, "PIC Kontrol": row.posisi_pj_kontrol,
       "Penjelasan Risiko": row.penjelasan_risiko, "Probabilitas Awal": row.c_probabilitas,
-      "Dampak Awal": row.c_dampak, 
+      "Dampak Awal": row.c_dampak,
       "Nilai Risiko Awal": getRiskValue(row.c_probabilitas, row.c_dampak),
       "Rencana Tindak Lanjut": row.penjelasan_tindak_lanjut, "Referensi TL": row.referensi_tindak_lanjut,
       "PIC TL": row.posisi_pj_tindak_lanjut, "Tgl Selesai": row.tanggal_selesai,
-      "Probabilitas Akhir": row.e_probabilitas, "Dampak Akhir": row.e_dampak, 
+      "Probabilitas Akhir": row.e_probabilitas, "Dampak Akhir": row.e_dampak,
       "Nilai Risiko Akhir": getRiskValue(row.e_probabilitas, row.e_dampak)
     }));
 
@@ -199,8 +199,8 @@ export default function IbprPage() {
     XLSX.writeFile(wb, `IBPR_${selectedProject.project}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const filteredProjects = projects.filter(p => 
-    p.project?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredProjects = projects.filter(p =>
+    p.project?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.wilayah?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -212,21 +212,21 @@ export default function IbprPage() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Dokumen IBPR</h1>
             <p className="text-sm text-slate-500 mt-1">Identifikasi Bahaya dan Penilaian Risiko per Proyek</p>
           </div>
-          
+
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
             <div className="relative w-full sm:w-64">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                 <Search size={18} />
               </div>
-              <Input 
-                type="text" 
-                placeholder="Cari nama proyek / wilayah..." 
+              <Input
+                type="text"
+                placeholder="Cari nama proyek / wilayah..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-slate-50 border-slate-200 h-10 w-full rounded-lg"
               />
             </div>
-            
+
             <Dialog open={isHeaderOpen} onOpenChange={setIsHeaderOpen}>
               <DialogTrigger className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 h-10 min-w-[160px] shadow-sm transition-all">
                 <Plus size={16} /> Buat Proyek Baru
@@ -263,8 +263,8 @@ export default function IbprPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredProjects.map((proj) => (
-              <div 
-                key={proj.id} 
+              <div
+                key={proj.id}
                 onClick={() => openProjectDetail(proj)}
                 className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 cursor-pointer transition-all group relative overflow-hidden"
               >
@@ -279,9 +279,9 @@ export default function IbprPage() {
                   {proj.project || 'Proyek Tanpa Nama'}
                 </h3>
                 <div className="space-y-2 text-xs text-slate-500">
-                  <div className="flex items-center gap-2"><MapPin size={14} className="text-slate-400"/> Wilayah: <span className="font-medium text-slate-700">{proj.wilayah || '-'}</span></div>
-                  <div className="flex items-center gap-2"><Building size={14} className="text-slate-400"/> Unit: <span className="font-medium text-slate-700">{proj.unit || '-'}</span></div>
-                  <div className="flex items-center gap-2"><Calendar size={14} className="text-slate-400"/> Tgl Berlaku: <span className="font-medium text-slate-700">{proj.tgl_berlaku || '-'}</span></div>
+                  <div className="flex items-center gap-2"><MapPin size={14} className="text-slate-400" /> Wilayah: <span className="font-medium text-slate-700">{proj.wilayah || '-'}</span></div>
+                  <div className="flex items-center gap-2"><Building size={14} className="text-slate-400" /> Unit: <span className="font-medium text-slate-700">{proj.unit || '-'}</span></div>
+                  <div className="flex items-center gap-2"><Calendar size={14} className="text-slate-400" /> Tgl Berlaku: <span className="font-medium text-slate-700">{proj.tgl_berlaku || '-'}</span></div>
                 </div>
               </div>
             ))}
@@ -294,7 +294,7 @@ export default function IbprPage() {
   return (
     <div className="p-4 md:p-6 space-y-6 min-h-screen bg-white print:p-0 print:m-0">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print border-b border-slate-100 pb-4">
-        
+
         <div className="flex items-center gap-4">
           <Button onClick={() => setViewMode('list')} variant="outline" className="h-9 w-9 p-0 rounded-full bg-slate-50 hover:bg-slate-100 border-slate-200 shadow-sm" title="Kembali">
             <ArrowLeft size={16} className="text-slate-600" />
@@ -304,12 +304,12 @@ export default function IbprPage() {
             <p className="text-sm font-medium text-blue-600">{selectedProject?.project}</p>
           </div>
         </div>
-        
+
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => window.print()} variant="outline" className="w-9 h-9 p-0 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100" title="Cetak PDF"><Printer size={16} /></Button>
           <Button onClick={exportToExcel} variant="outline" className="w-9 h-9 p-0 flex items-center justify-center bg-green-50 text-green-700 hover:bg-green-100 border-green-200" title="Export ke Excel"><FileSpreadsheet size={16} /></Button>
-          
-          <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) resetForm(); }}>
+
+          <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
             <DialogTrigger className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 h-9"><Plus size={16} /> Tambah Data IBPR</DialogTrigger>
             <DialogContent className="w-[95vw] sm:max-w-[90vw] md:max-w-[800px] lg:max-w-[1000px] max-h-[90vh] overflow-y-auto p-4 md:p-8 rounded-xl bg-slate-50">
               <DialogHeader><DialogTitle>{editId ? "Edit Risiko IBPR" : "Tambah Risiko IBPR"}</DialogTitle></DialogHeader>
@@ -318,15 +318,15 @@ export default function IbprPage() {
                 <Textarea placeholder="Penjelasan Kontrol" name="penjelasan_kontrol" value={formData.penjelasan_kontrol} onChange={handleChange} />
                 <div className="grid grid-cols-3 gap-4"><Input placeholder="Referensi Kontrol" name="referensi_kontrol" value={formData.referensi_kontrol} onChange={handleChange} /><select name="efektivitas" value={formData.efektivitas} onChange={handleChange} className="border p-2 rounded bg-white"><option value="T">T (Tinggi)</option><option value="S">S (Sedang)</option><option value="R">R (Rendah)</option></select><Input placeholder="PIC Kontrol" name="posisi_pj_kontrol" value={formData.posisi_pj_kontrol} onChange={handleChange} /></div>
                 <Textarea placeholder="Penjelasan Risiko" name="penjelasan_risiko" value={formData.penjelasan_risiko} onChange={handleChange} />
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500">Probabilitas Awal (1-5)</label><Input type="number" min="1" max="5" name="c_probabilitas" value={formData.c_probabilitas} onChange={handleChange} required /></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500">Dampak Awal (1-5)</label><Input type="number" min="1" max="5" name="c_dampak" value={formData.c_dampak} onChange={handleChange} required /></div>
                 </div>
-                
+
                 <Textarea placeholder="Rencana Tindak Lanjut" name="penjelasan_tindak_lanjut" value={formData.penjelasan_tindak_lanjut} onChange={handleChange} />
                 <div className="grid grid-cols-3 gap-4"><Input placeholder="Referensi TL" name="referensi_tindak_lanjut" value={formData.referensi_tindak_lanjut} onChange={handleChange} /><Input placeholder="PIC TL" name="posisi_pj_tindak_lanjut" value={formData.posisi_pj_tindak_lanjut} onChange={handleChange} /><Input type="date" name="tanggal_selesai" value={formData.tanggal_selesai} onChange={handleChange} /></div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500">Probabilitas Akhir (1-5)</label><Input type="number" min="1" max="5" name="e_probabilitas" value={formData.e_probabilitas} onChange={handleChange} required /></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500">Dampak Akhir (1-5)</label><Input type="number" min="1" max="5" name="e_dampak" value={formData.e_dampak} onChange={handleChange} required /></div>
@@ -380,23 +380,23 @@ export default function IbprPage() {
               <TableHead rowSpan={3} className="no-print border-2 border-black text-center font-bold text-black bg-slate-200 w-[80px]">AKSI</TableHead>
             </TableRow>
             <TableRow className="bg-orange-50 text-center font-bold text-black">
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(1)<br/>ID</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(2)<br/>BAHAYA</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br/>PENJELASAN KONTROL</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br/>REFERENSI</TableHead>
-              <TableHead colSpan={3} className="border-2 border-black text-center p-1 bg-blue-100">(3)<br/>EFEKTIVITA</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2 bg-blue-100">(4)<br/>PIC</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(1)<br/>PENJELASAN RISIKO</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br/>PROB</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(3)<br/>DAMPAK</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(4)<br/>NILAI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br/>RENCANA TINDAK LANJUT</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br/>REFERENSI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(3)<br/>PIC</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(4)<br/>TGL SELESAI</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(1)<br/>PROB</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br/>DAMPAK</TableHead>
-              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(3)<br/>NILAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(1)<br />ID</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(2)<br />BAHAYA</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br />PENJELASAN KONTROL</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br />REFERENSI</TableHead>
+              <TableHead colSpan={3} className="border-2 border-black text-center p-1 bg-blue-100">(3)<br />EFEKTIVITA</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2 bg-blue-100">(4)<br />PIC</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[200px] align-top p-2">(1)<br />PENJELASAN RISIKO</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br />PROB</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(3)<br />DAMPAK</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(4)<br />NILAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[250px] align-top p-2">(1)<br />RENCANA TINDAK LANJUT</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[150px] align-top p-2">(2)<br />REFERENSI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(3)<br />PIC</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[100px] align-top p-2">(4)<br />TGL SELESAI</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(1)<br />PROB</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2">(2)<br />DAMPAK</TableHead>
+              <TableHead rowSpan={2} className="border-2 border-black text-center w-[50px] align-top p-2 bg-slate-200">(3)<br />NILAI</TableHead>
             </TableRow>
             <TableRow className="bg-blue-100 text-center font-bold text-black">
               <TableHead className="border-2 border-black text-center w-[30px] p-1">T</TableHead>
@@ -422,30 +422,30 @@ export default function IbprPage() {
                   <TableCell className="border-2 border-black p-2">{row.penjelasan_risiko}</TableCell>
                   <TableCell className="border-2 border-black p-2 text-center">{row.c_probabilitas}</TableCell>
                   <TableCell className="border-2 border-black p-2 text-center">{row.c_dampak}</TableCell>
-                  
+
                   {/* --- NILAI RISIKO AWAL (MENGGUNAKAN INLINE STYLE) --- */}
-                  <TableCell 
+                  <TableCell
                     className={`border-2 border-black p-2 text-center transition-colors ${cRisk.className}`}
                     style={{ backgroundColor: cRisk.bgColor }}
                   >
                     {getRiskValue(row.c_probabilitas, row.c_dampak)}
                   </TableCell>
-                  
+
                   <TableCell className="border-2 border-black p-2">{row.penjelasan_tindak_lanjut}</TableCell>
                   <TableCell className="border-2 border-black p-2">{row.referensi_tindak_lanjut}</TableCell>
                   <TableCell className="border-2 border-black p-2">{row.posisi_pj_tindak_lanjut}</TableCell>
                   <TableCell className="border-2 border-black p-2">{row.tanggal_selesai}</TableCell>
                   <TableCell className="border-2 border-black p-2 text-center">{row.e_probabilitas}</TableCell>
                   <TableCell className="border-2 border-black p-2 text-center">{row.e_dampak}</TableCell>
-                  
+
                   {/* --- NILAI RISIKO AKHIR (MENGGUNAKAN INLINE STYLE) --- */}
-                  <TableCell 
+                  <TableCell
                     className={`border-2 border-black p-2 text-center transition-colors ${eRisk.className}`}
                     style={{ backgroundColor: eRisk.bgColor }}
                   >
                     {getRiskValue(row.e_probabilitas, row.e_dampak)}
                   </TableCell>
-                  
+
                   <TableCell className="no-print border-2 border-black p-2 text-center">
                     <div className="flex flex-col gap-1 items-center justify-center">
                       <Button onClick={() => handleEditClick(row)} variant="outline" size="sm" className="h-7 w-7 p-0 bg-blue-50 hover:bg-blue-100 border-blue-200" title="Edit Data"><Edit size={14} className="text-blue-600" /></Button>
