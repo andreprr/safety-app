@@ -103,9 +103,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
         <div className="w-full max-w-[420px] bg-white border border-slate-100 p-8 md:p-10 rounded-2xl shadow-[0_8px_40px_rgb(0,0,0,0.04)] relative z-10">
 
-          {/* BRANDING SRI */}
+          {/* BRANDING */}
           <div className="flex flex-col items-center justify-center mb-10">
-            <div className="font-black italic text-5xl tracking-[0.2em] text-slate-900 mb-2">
+            <img src="/KAI Properti.png" alt="Logo KAI Properti" className="w-32 h-24 object-contain drop-shadow-sm" />
+            <div className="font-black italic text-3xl tracking-[0.2em] text-slate-900 mb-2">
               KONSISTEN
             </div>
             <div className="h-[2px] w-12 bg-slate-200 rounded-full mb-4"></div>
@@ -176,7 +177,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
           <div className="mt-10 text-center pt-6 border-t border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">DIREKTORAT KESELAMATAN</p>
-            <p className="text-[10px] text-slate-400 mt-1.5">&copy; {new Date().getFullYear()} SRI. All rights reserved.</p>
+            <p className="text-[10px] text-slate-400 mt-1.5">&copy; {new Date().getFullYear()} Konsisten. All rights reserved.</p>
           </div>
 
         </div>
