@@ -106,11 +106,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           {/* BRANDING SRI */}
           <div className="flex flex-col items-center justify-center mb-10">
             <div className="font-black italic text-5xl tracking-[0.2em] text-slate-900 mb-2">
-              SRI
+              KONSISTEN
             </div>
             <div className="h-[2px] w-12 bg-slate-200 rounded-full mb-4"></div>
             <h1 className="text-xl font-bold tracking-tight text-slate-800 text-center">
-              Sistem Keselamatan Terpadu
+              ⁠Kontruksi Sistem Safety Manajemen
             </h1>
             <p className="text-sm text-slate-500 mt-2 text-center">
               Silakan masuk dengan kredensial Anda.
@@ -133,7 +133,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
                 </div>
                 <Input
                   type="email"
-                  placeholder="admin@sri.com"
+                  placeholder="admin@gmail.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
