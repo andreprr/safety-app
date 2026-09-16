@@ -9,8 +9,8 @@ import { Label } from "@/components/ui/label";
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true); 
-  
+  const [loading, setLoading] = useState(true);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -21,7 +21,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setTimeout(() => setLoading(false), 1500); 
+      setTimeout(() => setLoading(false), 1500);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -44,10 +44,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     };
 
     const events = ['mousemove', 'keydown', 'scroll', 'click'];
-    
+
     if (session) {
       events.forEach(event => window.addEventListener(event, resetTimer));
-      resetTimer(); 
+      resetTimer();
     }
 
     return () => {
@@ -60,7 +60,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     e.preventDefault();
     setLoginLoading(true);
     setErrorMsg("");
-    
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -69,7 +69,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     if (error) {
       setErrorMsg(error.message === "Invalid login credentials" ? "Email atau kata sandi salah." : error.message);
     }
-    
+
     setLoginLoading(false);
   };
 
@@ -85,9 +85,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         <div className="relative flex flex-col items-center">
           <Loader2 className="animate-spin text-slate-900 mb-6 w-10 h-10 opacity-80" />
           <h2 className="text-4xl font-black italic tracking-[0.2em] text-slate-900 animate-pulse mb-2">
-            SRI
+            Konsisten
           </h2>
-          <p className="text-slate-400 text-xs tracking-widest uppercase font-medium">Memuat Sistem...</p>
+          <p className="text-slate-400 text-xs tracking-widest uppercase font-medium">⁠Kontruksi Sistem Safety Manajemen.</p>
         </div>
       </div>
     );
@@ -97,12 +97,12 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   if (!session) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-white text-slate-900 font-sans p-4 relative overflow-hidden z-[9999] fixed inset-0">
-        
+
         {/* Dekorasi Latar Sangat Halus */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-slate-50 rounded-full blur-[100px] -z-10" />
 
         <div className="w-full max-w-[420px] bg-white border border-slate-100 p-8 md:p-10 rounded-2xl shadow-[0_8px_40px_rgb(0,0,0,0.04)] relative z-10">
-          
+
           {/* BRANDING SRI */}
           <div className="flex flex-col items-center justify-center mb-10">
             <div className="font-black italic text-5xl tracking-[0.2em] text-slate-900 mb-2">
@@ -131,8 +131,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                   <Mail size={18} />
                 </div>
-                <Input 
-                  type="email" 
+                <Input
+                  type="email"
                   placeholder="admin@sri.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -150,8 +150,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                   <Lock size={18} />
                 </div>
-                <Input 
-                  type="password" 
+                <Input
+                  type="password"
                   placeholder="Masukkan sandi..."
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -161,9 +161,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               </div>
             </div>
 
-            <Button 
-              type="submit" 
-              disabled={loginLoading} 
+            <Button
+              type="submit"
+              disabled={loginLoading}
               className="w-full h-12 mt-6 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-sm transition-all flex items-center justify-center group shadow-sm hover:shadow"
             >
               {loginLoading ? (

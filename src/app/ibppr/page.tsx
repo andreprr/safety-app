@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import ExcelJS from 'exceljs'; // Ubah library ke ExcelJS untuk dukungan styling warna
+import ExcelJS from 'exceljs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,14 @@ import {
   Plus, Printer, Settings, FileSpreadsheet, Edit, Trash2,
   Search, FolderOpen, ArrowLeft, Calendar, MapPin, Building
 } from "lucide-react";
+
+// DAFTAR SELURUH LOKASI TETAP UNTUK DROPDOWN
+const ALL_AREAS = [
+  "Area 1 Jakarta", "Area 2 Bandung", "Area 3 Cirebon", "Area 4 Semarang",
+  "Area 5 Purwokerto", "Area 6 Yogyakarta", "Area 7 Madiun", "Area 8 Surabaya",
+  "Area 9 Jember", "Area 10 Medan", "Area 11 Padang", "Area 12 Palembang",
+  "Area 13 Tanjung Karang", "Kantor Pusat"
+];
 
 // --- CSS KHUSUS UNTUK PRINT PDF AGAR PAS DI KERTAS ---
 const printStyles = `
@@ -34,7 +42,6 @@ const printStyles = `
       display: none !important;
     }
 
-    /* Memaksa tabel agar menyesuaikan dengan lebar kertas */
     .print-table-container {
       width: 100% !important;
       overflow: visible !important;
@@ -47,21 +54,19 @@ const printStyles = `
       table-layout: fixed !important; 
     }
 
-    /* Mengurangi ukuran font dan padding saat print agar tabel yang panjang bisa muat */
     th, td {
       font-size: 6.5pt !important; 
       padding: 2px !important;
       word-wrap: break-word !important;
     }
 
-    /* Mencegah baris terpotong di tengah halaman */
     tr {
       page-break-inside: avoid !important;
     }
   }
 `;
 
-// --- FUNGSI HELPER UNTUK WARNA (DIJAMIN 100% BERUBAH DENGAN INLINE STYLE) ---
+// --- FUNGSI HELPER UNTUK WARNA ---
 const getRiskStyles = (probabilitas: any, dampak: any) => {
   const value = Number(probabilitas || 0) * Number(dampak || 0);
 
@@ -73,7 +78,6 @@ const getRiskStyles = (probabilitas: any, dampak: any) => {
   return { className: "text-slate-400 font-medium", bgColor: "#F8FAFC" }; // Kosong
 };
 
-// Fungsi warna khusus untuk ExcelJS (format ARGB)
 const getExcelRiskColor = (probabilitas: any, dampak: any) => {
   const value = Number(probabilitas || 0) * Number(dampak || 0);
   if (value >= 17) return { bg: "FFDC2626", font: "FFFFFFFF" };
@@ -131,7 +135,9 @@ export default function IbprPage() {
     }
   };
 
-  const handleHeaderChange = (e: React.ChangeEvent<HTMLInputElement>) => setHeaderData({ ...headerData, [e.target.name]: e.target.value });
+  const handleHeaderChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setHeaderData({ ...headerData, [e.target.name]: e.target.value });
+  };
 
   const handleHeaderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,7 +169,9 @@ export default function IbprPage() {
     } catch (error) { }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
   const resetForm = () => {
     setFormData({
@@ -178,13 +186,33 @@ export default function IbprPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const payload = { ...formData, header_id: selectedProject.id };
+      // PERBAIKAN: Hanya mengambil field murni yang ada pada formData
+      // Mengabaikan kolom otomatis seperti c_nilai_risiko atau e_nilai_risiko jika tersangkut di state
+      const cleanPayload = {
+        kode_id: formData.kode_id,
+        bahaya: formData.bahaya,
+        penjelasan_kontrol: formData.penjelasan_kontrol,
+        referensi_kontrol: formData.referensi_kontrol,
+        efektivitas: formData.efektivitas,
+        posisi_pj_kontrol: formData.posisi_pj_kontrol,
+        penjelasan_risiko: formData.penjelasan_risiko,
+        c_probabilitas: formData.c_probabilitas,
+        c_dampak: formData.c_dampak,
+        penjelasan_tindak_lanjut: formData.penjelasan_tindak_lanjut,
+        referensi_tindak_lanjut: formData.referensi_tindak_lanjut,
+        posisi_pj_tindak_lanjut: formData.posisi_pj_tindak_lanjut,
+        tanggal_selesai: formData.tanggal_selesai,
+        e_probabilitas: formData.e_probabilitas,
+        e_dampak: formData.e_dampak,
+        header_id: selectedProject.id
+      };
+
       if (editId) {
-        const { error } = await supabase.from('ibppr').update(payload).eq('id', editId);
+        const { error } = await supabase.from('ibppr').update(cleanPayload).eq('id', editId);
         if (error) throw new Error(error.message);
         alert("Data IBPR berhasil diperbarui!");
       } else {
-        const { error } = await supabase.from('ibppr').insert([payload]);
+        const { error } = await supabase.from('ibppr').insert([cleanPayload]);
         if (error) throw new Error(error.message);
         alert("Data IBPR ditambahkan!");
       }
@@ -214,23 +242,20 @@ export default function IbprPage() {
     }
   };
 
-  // --- FUNGSI EXPORT KE EXCEL DENGAN EXCELJS (MENYIMPAN WARNA & MERGER SEL) ---
   const exportToExcel = async () => {
     setIsExportingExcel(true);
     try {
       const workbook = new ExcelJS.Workbook();
       const ws = workbook.addWorksheet("Data_IBPR", { views: [{ showGridLines: true }] });
 
-      // Setup Lebar Kolom
       ws.columns = [
-        { width: 8 }, { width: 25 }, { width: 35 }, { width: 20 }, // A-D
-        { width: 5 }, { width: 5 }, { width: 5 }, { width: 20 }, // E-H
-        { width: 25 }, { width: 8 }, { width: 8 }, { width: 10 }, // I-L
-        { width: 35 }, { width: 20 }, { width: 20 }, { width: 15 }, // M-P
-        { width: 8 }, { width: 8 }, { width: 10 }                 // Q-S
+        { width: 8 }, { width: 25 }, { width: 35 }, { width: 20 },
+        { width: 5 }, { width: 5 }, { width: 5 }, { width: 20 },
+        { width: 25 }, { width: 8 }, { width: 8 }, { width: 10 },
+        { width: 35 }, { width: 20 }, { width: 20 }, { width: 15 },
+        { width: 8 }, { width: 8 }, { width: 10 }
       ];
 
-      // Baris Header 1
       const row1 = ws.addRow([
         'A. IDENTIFIKASI BAHAYA', '', 'B. KONTROL YANG ADA', '', '', '', '', '',
         'C. PENILAIAN RISIKO', '', '', '', 'D. RENCANA TINDAK LANJUT', '', '', '',
@@ -238,43 +263,32 @@ export default function IbprPage() {
       ]);
       ws.mergeCells('A1:B1'); ws.mergeCells('C1:H1'); ws.mergeCells('I1:L1'); ws.mergeCells('M1:P1'); ws.mergeCells('Q1:S1');
 
-      // Baris Header 2
       const row2 = ws.addRow([
         '(1)\nID', '(2)\nBAHAYA', '(1)\nPENJELASAN KONTROL', '(2)\nREFERENSI', '(3)\nEFEKTIVITAS', '', '', '(4)\nPIC',
         '(1)\nPENJELASAN RISIKO', '(2)\nPROB', '(3)\nDAMPAK', '(4)\nNILAI', '(1)\nRENCANA TINDAK LANJUT', '(2)\nREFERENSI',
         '(3)\nPIC', '(4)\nTGL SELESAI', '(1)\nPROB', '(2)\nDAMPAK', '(3)\nNILAI'
       ]);
       ws.mergeCells('A2:A3'); ws.mergeCells('B2:B3'); ws.mergeCells('C2:C3'); ws.mergeCells('D2:D3');
-      ws.mergeCells('E2:G2'); // Merge Efektivitas T,S,R
+      ws.mergeCells('E2:G2');
       ws.mergeCells('H2:H3'); ws.mergeCells('I2:I3'); ws.mergeCells('J2:J3'); ws.mergeCells('K2:K3'); ws.mergeCells('L2:L3');
       ws.mergeCells('M2:M3'); ws.mergeCells('N2:N3'); ws.mergeCells('O2:O3'); ws.mergeCells('P2:P3');
       ws.mergeCells('Q2:Q3'); ws.mergeCells('R2:R3'); ws.mergeCells('S2:S3');
 
-      // Baris Header 3
       const row3 = ws.addRow(['', '', '', '', 'T', 'S', 'R', '', '', '', '', '', '', '', '', '', '', '', '']);
 
-      // Styling Headers
       [row1, row2, row3].forEach((row, i) => {
         row.eachCell({ includeEmpty: true }, (cell) => {
           cell.font = { bold: true, name: 'Arial', size: 9 };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
       });
 
-      // Warna Header
-      row1.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } }; }); // Orange Muda
-      row2.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } }; // Biru Muda
-      ['E', 'F', 'G'].forEach(col => {
-        row3.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
-      });
-      ['L', 'S'].forEach(col => {
-        row2.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }; // Abu-abu
-      });
+      row1.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } }; });
+      row2.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+      ['E', 'F', 'G'].forEach(col => { row3.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } }; });
+      ['L', 'S'].forEach(col => { row2.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }; });
 
-      // Insert Data ke Excel
       hazards.forEach((row) => {
         const cRiskVal = getRiskValue(row.c_probabilitas, row.c_dampak);
         const eRiskVal = getRiskValue(row.e_probabilitas, row.e_dampak);
@@ -290,30 +304,24 @@ export default function IbprPage() {
         r.eachCell({ includeEmpty: true }, (cell) => {
           cell.font = { name: 'Arial', size: 9 };
           cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-          cell.border = {
-            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
-          };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
         });
 
-        // Center alignment untuk kolom angka/nilai
         ['A', 'E', 'F', 'G', 'J', 'K', 'L', 'Q', 'R', 'S'].forEach(col => {
           r.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' };
         });
 
-        // Warnai Cell Risiko Awal (Kolom L)
         const cColor = getExcelRiskColor(row.c_probabilitas, row.c_dampak);
         const cellL = r.getCell('L');
         cellL.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cColor.bg } };
         cellL.font = { bold: true, color: { argb: cColor.font }, name: 'Arial', size: 9 };
 
-        // Warnai Cell Risiko Akhir (Kolom S)
         const eColor = getExcelRiskColor(row.e_probabilitas, row.e_dampak);
         const cellS = r.getCell('S');
         cellS.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: eColor.bg } };
         cellS.font = { bold: true, color: { argb: eColor.font }, name: 'Arial', size: 9 };
       });
 
-      // Proses Download File
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
@@ -369,7 +377,21 @@ export default function IbprPage() {
                 <form onSubmit={handleHeaderSubmit} className="space-y-4 mt-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input placeholder="Nama Project (Wajib)" name="project" value={headerData.project} onChange={handleHeaderChange} className="md:col-span-2" required />
-                    <Input placeholder="Wilayah" name="wilayah" value={headerData.wilayah} onChange={handleHeaderChange} />
+
+                    {/* PERBAIKAN: Input Wilayah Diubah Menjadi Dropdown */}
+                    <select
+                      name="wilayah"
+                      value={headerData.wilayah}
+                      onChange={handleHeaderChange}
+                      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      required
+                    >
+                      <option value="" disabled>Pilih Wilayah...</option>
+                      {ALL_AREAS.map((area) => (
+                        <option key={area} value={area}>{area}</option>
+                      ))}
+                    </select>
+
                     <Input placeholder="Unit" name="unit" value={headerData.unit} onChange={handleHeaderChange} />
                     <Input placeholder="No Kode Dokumen" name="no_dokumen" value={headerData.no_dokumen} onChange={handleHeaderChange} />
                     <Input placeholder="Level Dokumen" name="level_dokumen" value={headerData.level_dokumen} onChange={handleHeaderChange} />
@@ -452,7 +474,7 @@ export default function IbprPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4"><Input placeholder="ID (Contoh: R-01)" name="kode_id" value={formData.kode_id} onChange={handleChange} required /><Input placeholder="Bahaya" name="bahaya" value={formData.bahaya} onChange={handleChange} required /></div>
                 <Textarea placeholder="Penjelasan Kontrol" name="penjelasan_kontrol" value={formData.penjelasan_kontrol} onChange={handleChange} />
-                <div className="grid grid-cols-3 gap-4"><Input placeholder="Referensi Kontrol" name="referensi_kontrol" value={formData.referensi_kontrol} onChange={handleChange} /><select name="efektivitas" value={formData.efektivitas} onChange={handleChange} className="border p-2 rounded bg-white"><option value="T">T (Tinggi)</option><option value="S">S (Sedang)</option><option value="R">R (Rendah)</option></select><Input placeholder="PIC Kontrol" name="posisi_pj_kontrol" value={formData.posisi_pj_kontrol} onChange={handleChange} /></div>
+                <div className="grid grid-cols-3 gap-4"><Input placeholder="Referensi Kontrol" name="referensi_kontrol" value={formData.referensi_kontrol} onChange={handleChange} /><select name="efektivitas" value={formData.efektivitas} onChange={handleChange} className="border p-2 rounded bg-white outline-none"><option value="T">T (Tinggi)</option><option value="S">S (Sedang)</option><option value="R">R (Rendah)</option></select><Input placeholder="PIC Kontrol" name="posisi_pj_kontrol" value={formData.posisi_pj_kontrol} onChange={handleChange} /></div>
                 <Textarea placeholder="Penjelasan Risiko" name="penjelasan_risiko" value={formData.penjelasan_risiko} onChange={handleChange} />
 
                 <div className="grid grid-cols-2 gap-4">
