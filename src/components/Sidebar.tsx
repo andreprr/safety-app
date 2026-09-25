@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FileSpreadsheet, ClipboardCheck, AlertOctagon, MonitorPlay,
-  PanelLeftClose, PanelLeft, Globe, Leaf, ChevronDown, ChevronRight, FileText, Image as ImageIcon
+  PanelLeftClose, PanelLeft, Globe, Leaf, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
+  SearchCheck, HeartPulse
 } from "lucide-react";
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (val: boolean) => void }) {
@@ -32,8 +33,10 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
     { name: "Poster K3", path: "/dokumen/poster", icon: <ImageIcon size={16} /> },
   ];
 
+  // Menambahkan menu "Kesehatan" di atas "Lingkungan"
   const bottomNavItems = [
-    { name: "Lingkungan", path: "/lingkungan", icon: <Leaf size={20} /> },
+    { name: "Kesehatan", path: "/kesehatan", icon: <HeartPulse size={20} /> },
+    { name: "Lingkungan", path: "", icon: <Leaf size={20} /> },
     { name: "SRI", path: "", icon: <Globe size={20} /> },
   ];
 
@@ -128,6 +131,21 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
                 })}
               </div>
             )}
+          </div>
+
+          {/* MENU INVESTIGASI (Di bawah Dokumen, Di atas Kategori Lainnya) */}
+          <div className="mt-2">
+            <Link href="/investigasi" onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
+              <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${pathname === '/investigasi'
+                ? "bg-blue-800/80 text-white shadow-md border-[#F97316]"
+                : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                }`}>
+                <div className={pathname === '/investigasi' ? "text-[#F97316]" : "text-blue-300"}>
+                  <SearchCheck size={20} />
+                </div>
+                Investigasi
+              </div>
+            </Link>
           </div>
 
           <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mt-8 mb-3 px-3">Lainnya</div>

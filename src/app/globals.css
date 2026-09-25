@@ -121,9 +121,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+
   html {
     @apply font-sans;
   }
@@ -134,47 +136,56 @@
 }
 
 @media print {
-  /* Atur kertas default menjadi Landscape */
+
+  /* 1. Atur Kertas */
   @page {
-    size: landscape;
+    size: A4 landscape;
     margin: 10mm;
   }
 
-  /* Sembunyikan elemen yang tidak perlu */
-  aside,
-  header,
-  .no-print {
-    display: none !important;
+  /* 2. RESET OVERFLOW & HEIGHT (SOLUSI LAYOUT BLANK/KOSONG) */
+  html,
+  body,
+  div,
+  main,
+  section {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
+  /* 3. MATIKAN FLEXBOX PADA WRAPPER LAYOUT.TSX */
+  body>div {
+    display: block !important;
+  }
+
+  /* 4. RESET MARGIN MAIN (Hapus dorongan Sidebar) */
   main {
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
+    display: block !important;
   }
 
-  /* Paksa cetak warna */
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+  /* 5. SEMBUNYIKAN SIDEBAR DLL */
+  aside,
+  header,
+  nav,
+  .no-print {
+    display: none !important;
   }
 
-  /* Perkecil seluruh tampilan khusus saat di-print */
+  /* 6. PAKSA WARNA PUTIH BERSIH (SOLUSI DARK MODE) */
+  :root,
+  .dark {
+    --background: oklch(1 0 0) !important;
+    --foreground: oklch(0 0 0) !important;
+  }
+
+  html,
   body {
-    zoom: 45% !important;
-  }
-
-  /* PERBAIKAN: Gunakan tag HTML langsung agar tidak error di PostCSS */
-  table,
-  .overflow-x-auto > div {
-    min-width: 100% !important;
-    width: 100% !important;
-  }
-
-  /* Izinkan teks turun ke bawah jika kolom terlalu sempit */
-  th,
-  td {
-    white-space: normal !important;
-    word-wrap: break-word !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
   }
 }

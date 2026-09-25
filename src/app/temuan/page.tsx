@@ -300,12 +300,11 @@ export default function ReviewTemuanPage() {
                     )}
                     <Input
                       type="file"
-                      accept="image/png, image/jpeg, image/jpg"
-                      capture="environment"
+                      accept="image/*"
                       onChange={(e) => { if (e.target.files) setFotoTindakLanjut(e.target.files[0]) }}
                       className="cursor-pointer bg-slate-50 border-slate-200"
                     />
-                    <p className="text-[10px] text-slate-400">Pilih file baru untuk mengganti foto bukti sebelumnya.</p>
+                    <p className="text-[10px] text-slate-400">Bisa foto langsung dengan kamera atau pilih dari galeri HP.</p>
                   </div>
 
                   <div className="space-y-2">
@@ -401,11 +400,11 @@ export default function ReviewTemuanPage() {
                   <label className="text-sm font-semibold text-slate-700 block">Bukti Foto Perbaikan (After)</label>
                   <Input
                     type="file"
-                    accept="image/png, image/jpeg, image/jpg"
-                    capture="environment"
+                    accept="image/*"
                     onChange={(e) => { if (e.target.files) setFotoTindakLanjut(e.target.files[0]) }}
                     className="cursor-pointer"
                   />
+                  <p className="text-[11px] text-slate-400">Bisa foto langsung dengan kamera atau pilih dari galeri HP.</p>
                 </div>
 
                 <div className="space-y-1.5 pt-2 border-t border-slate-100">

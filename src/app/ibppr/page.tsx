@@ -156,6 +156,22 @@ export default function IbprPage() {
     }
   };
 
+  // FUNGSI MENGHAPUS PROYEK (HEADER IBPR)
+  const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation(); // Mencegah klik masuk ke dalam detail proyek
+    if (!window.confirm("Yakin ingin menghapus Proyek ini beserta seluruh datanya?")) return;
+
+    try {
+      const { error } = await supabase.from('ibppr_header').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+
+      alert("Proyek berhasil dihapus!");
+      fetchProjects();
+    } catch (error: any) {
+      alert("Gagal menghapus proyek: " + error.message);
+    }
+  };
+
   const openProjectDetail = (project: any) => {
     setSelectedProject(project);
     fetchHazards(project.id);
@@ -186,8 +202,6 @@ export default function IbprPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      // PERBAIKAN: Hanya mengambil field murni yang ada pada formData
-      // Mengabaikan kolom otomatis seperti c_nilai_risiko atau e_nilai_risiko jika tersangkut di state
       const cleanPayload = {
         kode_id: formData.kode_id,
         bahaya: formData.bahaya,
@@ -378,7 +392,6 @@ export default function IbprPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input placeholder="Nama Project (Wajib)" name="project" value={headerData.project} onChange={handleHeaderChange} className="md:col-span-2" required />
 
-                    {/* PERBAIKAN: Input Wilayah Diubah Menjadi Dropdown */}
                     <select
                       name="wilayah"
                       value={headerData.wilayah}
@@ -421,14 +434,25 @@ export default function IbprPage() {
               <div
                 key={proj.id}
                 onClick={() => openProjectDetail(proj)}
-                className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 cursor-pointer transition-all group relative overflow-hidden"
+                className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 cursor-pointer transition-all group relative overflow-hidden flex flex-col"
               >
                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="flex justify-between items-start mb-4">
                   <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
                     <FolderOpen size={20} />
                   </div>
-                  <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{proj.no_dokumen || 'NO-DOC'}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{proj.no_dokumen || 'NO-DOC'}</span>
+
+                    {/* TOMBOL HAPUS PROYEK */}
+                    <button
+                      onClick={(e) => handleDeleteProject(e, proj.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                      title="Hapus Proyek"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
                 <h3 className="text-lg font-bold text-slate-800 line-clamp-2 leading-tight mb-3 group-hover:text-blue-600 transition-colors">
                   {proj.project || 'Proyek Tanpa Nama'}
@@ -497,21 +521,22 @@ export default function IbprPage() {
         </div>
       </div>
 
-      <div className="border-2 border-black p-0 text-xs md:text-sm font-semibold overflow-x-auto mt-6 print:mt-0 print:border-collapse print:w-full">
+      <div className="border-2 border-black p-0 text-xs md:text-sm font-semibold overflow-x-auto mt-6 print:mt-0 print:border-collapse print:w-full bg-white">
         <div className="min-w-[800px] print:min-w-full">
           <div className="grid grid-cols-12 border-b-2 border-black">
-            <div className="col-span-2 border-r-2 border-black p-4 flex items-center justify-center print:p-2">
-              <div className="text-blue-800 font-bold text-xl italic tracking-tighter">KAI <span className="text-orange-500 text-sm not-italic block mt-[-5px]">Properti</span></div>
+            {/* PERBAIKAN LOGO KAI PROPERTI */}
+            <div className="col-span-2 border-r-2 border-black p-4 flex items-center justify-center print:p-2 bg-white">
+              <img src="/KAI Properti.png" alt="Logo KAI Properti" className="max-h-12 object-contain" />
             </div>
-            <div className="col-span-7 border-r-2 border-black p-4 flex items-center justify-center text-lg text-center uppercase print:text-sm print:p-2">IDENTIFIKASI BAHAYA DAN PENILAIAN RISIKO (IBPR)</div>
-            <div className="col-span-3 p-2 text-[10px] flex flex-col justify-center space-y-1">
+            <div className="col-span-7 border-r-2 border-black p-4 flex items-center justify-center text-lg text-center uppercase print:text-sm print:p-2 bg-white">IDENTIFIKASI BAHAYA DAN PENILAIAN RISIKO (IBPR)</div>
+            <div className="col-span-3 p-2 text-[10px] flex flex-col justify-center space-y-1 bg-white">
               <div className="grid grid-cols-2"><span>NO. KODE DOKUMEN</span><span>: {selectedProject?.no_dokumen}</span></div>
               <div className="grid grid-cols-2"><span>LEVEL DOKUMEN</span><span>: {selectedProject?.level_dokumen}</span></div>
               <div className="grid grid-cols-2"><span>REVISI KE</span><span>: {selectedProject?.revisi}</span></div>
               <div className="grid grid-cols-2"><span>TGL MULAI BERLAKU</span><span>: {selectedProject?.tgl_berlaku}</span></div>
             </div>
           </div>
-          <div className="grid grid-cols-12 text-[11px]">
+          <div className="grid grid-cols-12 text-[11px] bg-white">
             <div className="col-span-6 border-r-2 border-black p-2 space-y-1">
               <div className="grid grid-cols-4"><span className="col-span-1">WILAYAH</span><span className="col-span-3">: {selectedProject?.wilayah}</span></div>
               <div className="grid grid-cols-4"><span className="col-span-1">UNIT</span><span className="col-span-3">: {selectedProject?.unit}</span></div>
@@ -526,7 +551,7 @@ export default function IbprPage() {
         </div>
       </div>
 
-      <div className="print-table-container w-full overflow-x-auto rounded-none border-2 border-black shadow-sm print:shadow-none print:border-none">
+      <div className="print-table-container w-full overflow-x-auto rounded-none border-2 border-black shadow-sm print:shadow-none print:border-none bg-white">
         <Table className="min-w-[1500px] border-collapse text-xs print:min-w-full">
           <TableHeader>
             <TableRow className="bg-orange-100">
@@ -568,7 +593,7 @@ export default function IbprPage() {
               const eRisk = getRiskStyles(row.e_probabilitas, row.e_dampak);
 
               return (
-                <TableRow key={row.id} className="hover:bg-slate-50 transition-colors">
+                <TableRow key={row.id} className="hover:bg-slate-50 transition-colors bg-white text-black">
                   <TableCell className="border-2 border-black p-1 text-center font-medium">{row.kode_id}</TableCell>
                   <TableCell className="border-2 border-black p-1">{row.bahaya}</TableCell>
                   <TableCell className="border-2 border-black p-1">{row.penjelasan_kontrol}</TableCell>
@@ -600,7 +625,7 @@ export default function IbprPage() {
                     {getRiskValue(row.e_probabilitas, row.e_dampak)}
                   </TableCell>
 
-                  <TableCell className="no-print border-2 border-black p-1 text-center">
+                  <TableCell className="no-print border-2 border-black p-1 text-center bg-white">
                     <div className="flex flex-col gap-1 items-center justify-center">
                       <Button onClick={() => handleEditClick(row)} variant="outline" size="sm" className="h-7 w-7 p-0 bg-blue-50 hover:bg-blue-100 border-blue-200" title="Edit Data"><Edit size={14} className="text-blue-600" /></Button>
                       <Button onClick={() => handleDelete(row.id)} variant="outline" size="sm" className="h-7 w-7 p-0 bg-red-50 hover:bg-red-100 border-red-200" title="Hapus Data"><Trash2 size={14} className="text-red-600" /></Button>
