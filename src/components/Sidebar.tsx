@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider"; // <-- 1. Impor context auth
 import {
   LayoutDashboard, FileSpreadsheet, ClipboardCheck, AlertOctagon, MonitorPlay,
   PanelLeftClose, PanelLeft, Globe, Leaf, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
-  SearchCheck, HeartPulse
+  SearchCheck, HeartPulse, UserPlus, UserCog
 } from "lucide-react";
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (val: boolean) => void }) {
   const pathname = usePathname();
+  const { profile } = useAuth(); // <-- 2. Ambil data profil (termasuk role)
   const [isDokumenOpen, setIsDokumenOpen] = useState(false);
 
   useEffect(() => {
@@ -33,11 +35,16 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
     { name: "Poster K3", path: "/dokumen/poster", icon: <ImageIcon size={16} /> },
   ];
 
-  // Menambahkan menu "Kesehatan" di atas "Lingkungan"
   const bottomNavItems = [
     { name: "Kesehatan", path: "/kesehatan", icon: <HeartPulse size={20} /> },
-    { name: "Lingkungan", path: "", icon: <Leaf size={20} /> },
-    { name: "SRI", path: "", icon: <Globe size={20} /> },
+    { name: "Lingkungan", path: "/lingkungan", icon: <Leaf size={20} /> },
+    { name: "SRI", path: "/sri", icon: <Globe size={20} /> },
+  ];
+
+  // Menambahkan menu khusus Admin
+  const adminItems = [
+    { name: "Registrasi User", path: "/register", icon: <UserPlus size={20} /> },
+    { name: "Manajemen User", path: "/manajemen-user", icon: <UserCog size={20} /> },
   ];
 
   return (
@@ -133,7 +140,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
             )}
           </div>
 
-          {/* MENU INVESTIGASI (Di bawah Dokumen, Di atas Kategori Lainnya) */}
+          {/* MENU INVESTIGASI */}
           <div className="mt-2">
             <Link href="/investigasi" onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
               <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${pathname === '/investigasi'
@@ -165,6 +172,29 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
               </Link>
             );
           })}
+
+          {/* 3. MENU ADMIN PANEL (Hanya Dirender Jika Role = 'admin') */}
+          {profile?.role === 'admin' && (
+            <>
+              <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mt-8 mb-3 px-3">Admin Panel</div>
+
+              {adminItems.map((item) => {
+                const isActive = pathname === item.path;
+                return (
+                  <Link key={item.name} href={item.path} onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
+                    <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${isActive
+                      ? "bg-blue-800/80 text-white shadow-md border-[#F97316]"
+                      : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                      }`}>
+                      <div className={isActive ? "text-[#F97316]" : "text-blue-300"}>{item.icon}</div>
+                      {item.name}
+                    </div>
+                  </Link>
+                );
+              })}
+            </>
+          )}
+
         </div>
       </aside>
     </>

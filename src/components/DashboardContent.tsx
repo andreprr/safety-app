@@ -3,18 +3,16 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/components/AuthProvider"; // <-- Mengambil data profil user yang sedang login
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer
 } from "recharts";
 import {
     FileText, AlertCircle, Clock, CheckCircle2, Flame, ShieldAlert,
-    Activity, Download, MapPin, Plus, ChevronLeft, ChevronRight,
-    ChevronsLeft, ChevronsRight, Calendar, CalendarDays, RotateCcw, FolderOpen
+    Activity, Download, MapPin, ChevronLeft, ChevronRight,
+    ChevronsLeft, ChevronsRight, Calendar, CalendarDays, Save
 } from "lucide-react";
 
-// ==================================================
-// DAFTAR SELURUH LOKASI TETAP UNTUK GRAFIK & TABEL
-// ==================================================
 const ALL_AREAS = [
     "Area 1 Jakarta", "Area 2 Bandung", "Area 3 Cirebon", "Area 4 Semarang",
     "Area 5 Purwokerto", "Area 6 Yogyakarta", "Area 7 Madiun", "Area 8 Surabaya",
@@ -25,17 +23,7 @@ const ALL_AREAS = [
 // ==================================================
 // 1. KOMPONEN CUSTOM KALENDER RANGE PICKER
 // ==================================================
-const CustomDateRangePicker = ({
-    startDate,
-    endDate,
-    onChange,
-    label = "Rentang Waktu"
-}: {
-    startDate: string,
-    endDate: string,
-    onChange: (start: string, end: string) => void,
-    label?: string
-}) => {
+const CustomDateRangePicker = ({ startDate, endDate, onChange, label = "Rentang Waktu" }: any) => {
     const [isOpen, setIsOpen] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(new Date(startDate || new Date()));
     const [tempStart, setTempStart] = useState<string | null>(startDate);
@@ -44,9 +32,7 @@ const CustomDateRangePicker = ({
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setIsOpen(false);
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -56,60 +42,37 @@ const CustomDateRangePicker = ({
     const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
 
     const handleDayClick = (day: number) => {
-        const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-        const dateStr = clickedDate.toLocaleDateString('en-CA');
-
+        const dateStr = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day).toLocaleDateString('en-CA');
         if (!tempStart || (tempStart && tempEnd)) {
-            setTempStart(dateStr);
-            setTempEnd(null);
+            setTempStart(dateStr); setTempEnd(null);
         } else {
             if (new Date(dateStr) < new Date(tempStart)) {
-                setTempEnd(tempStart);
-                setTempStart(dateStr);
-            } else {
-                setTempEnd(dateStr);
-            }
+                setTempEnd(tempStart); setTempStart(dateStr);
+            } else setTempEnd(dateStr);
         }
     };
 
     const handleApply = () => {
-        if (tempStart && tempEnd) {
-            onChange(tempStart, tempEnd);
-            setIsOpen(false);
-        } else if (tempStart) {
-            onChange(tempStart, tempStart);
-            setIsOpen(false);
-        }
+        if (tempStart && tempEnd) { onChange(tempStart, tempEnd); setIsOpen(false); }
+        else if (tempStart) { onChange(tempStart, tempStart); setIsOpen(false); }
     };
 
     const renderCalendar = () => {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth();
-        const daysInMonth = getDaysInMonth(year, month);
-        const firstDay = getFirstDayOfMonth(year, month);
+        const year = currentMonth.getFullYear(), month = currentMonth.getMonth();
+        const daysInMonth = getDaysInMonth(year, month), firstDay = getFirstDayOfMonth(year, month);
         const days = [];
 
-        for (let i = 0; i < firstDay; i++) {
-            days.push(<div key={`empty-${i}`} className="w-8 h-8"></div>);
-        }
-
+        for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="w-8 h-8"></div>);
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = new Date(year, month, i).toLocaleDateString('en-CA');
-            const isStart = tempStart === dateStr;
-            const isEnd = tempEnd === dateStr;
+            const isStart = tempStart === dateStr, isEnd = tempEnd === dateStr;
             const isBetween = tempStart && tempEnd && dateStr > tempStart && dateStr < tempEnd;
-            const isToday = new Date().toLocaleDateString('en-CA') === dateStr;
-
             let bgClass = "bg-white hover:bg-slate-100 text-slate-700";
             if (isStart || isEnd) bgClass = "bg-[#1E3A8A] text-white font-bold shadow-md";
             else if (isBetween) bgClass = "bg-blue-100 text-[#1E3A8A] font-semibold";
 
             days.push(
-                <button
-                    key={i}
-                    onClick={() => handleDayClick(i)}
-                    className={`w-8 h-8 flex items-center justify-center text-xs rounded-full transition-all ${bgClass} ${isToday && !isStart && !isEnd && !isBetween ? 'border border-[#F97316] text-[#F97316]' : ''}`}
-                >
+                <button key={i} onClick={() => handleDayClick(i)} className={`w-8 h-8 flex items-center justify-center text-xs rounded-full transition-all ${bgClass}`}>
                     {i}
                 </button>
             );
@@ -119,46 +82,28 @@ const CustomDateRangePicker = ({
 
     return (
         <div className="relative" ref={wrapperRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="h-9 px-3 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg focus:border-[#1E3A8A] flex items-center gap-2 shadow-sm transition-colors hover:bg-slate-50"
-                title={label}
-            >
+            <button onClick={() => setIsOpen(!isOpen)} className="h-9 px-3 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-2 shadow-sm hover:bg-slate-50" title={label}>
                 <Calendar size={14} className="text-slate-400" />
-                <span>{startDate || 'Start'}</span>
-                <span className="text-slate-400 font-normal">s/d</span>
-                <span>{endDate || 'End'}</span>
+                <span>{startDate || 'Start'}</span> <span className="text-slate-400 font-normal">s/d</span> <span>{endDate || 'End'}</span>
             </button>
-
             {isOpen && (
                 <div className="absolute top-11 right-0 z-50 bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-[300px]">
                     <div className="flex justify-between items-center mb-4 bg-slate-50 p-1.5 rounded-lg">
                         <div className="flex gap-1">
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsLeft size={16} className="text-slate-600" /></button>
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronLeft size={16} className="text-slate-600" /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsLeft size={16} /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronLeft size={16} /></button>
                         </div>
-                        <span className="text-sm font-bold text-[#1E3A8A] text-center flex-1">
-                            {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
-                        </span>
+                        <span className="text-sm font-bold text-[#1E3A8A] text-center flex-1">{currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}</span>
                         <div className="flex gap-1">
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronRight size={16} className="text-slate-600" /></button>
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsRight size={16} className="text-slate-600" /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronRight size={16} /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsRight size={16} /></button>
                         </div>
                     </div>
-
                     <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                        {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (
-                            <div key={i} className="text-[10px] font-bold text-slate-400">{d}</div>
-                        ))}
+                        {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (<div key={i} className="text-[10px] font-bold text-slate-400">{d}</div>))}
                     </div>
-
-                    <div className="grid grid-cols-7 gap-y-1 gap-x-1 justify-items-center">
-                        {renderCalendar()}
-                    </div>
-
-                    <button onClick={handleApply} className="w-full mt-4 bg-[#1E3A8A] hover:bg-[#152C69] text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md">
-                        Simpan Tanggal
-                    </button>
+                    <div className="grid grid-cols-7 gap-y-1 gap-x-1 justify-items-center">{renderCalendar()}</div>
+                    <button onClick={handleApply} className="w-full mt-4 bg-[#1E3A8A] hover:bg-[#152C69] text-white text-xs font-bold py-2.5 rounded-xl shadow-md">Simpan Tanggal</button>
                 </div>
             )}
         </div>
@@ -168,24 +113,14 @@ const CustomDateRangePicker = ({
 // ==================================================
 // 2. KOMPONEN CUSTOM SINGLE DATE PICKER
 // ==================================================
-const CustomSingleDatePicker = ({
-    date,
-    onChange,
-    label = "Pilih Tanggal Mulai Proyek"
-}: {
-    date: string,
-    onChange: (date: string) => void,
-    label?: string
-}) => {
+const CustomSingleDatePicker = ({ date, onChange, label = "Pilih Tanggal Mulai Proyek" }: any) => {
     const [isOpen, setIsOpen] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(new Date(date || new Date()));
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setIsOpen(false);
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -195,37 +130,24 @@ const CustomSingleDatePicker = ({
     const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
 
     const handleDayClick = (day: number) => {
-        const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-        const dateStr = clickedDate.toLocaleDateString('en-CA');
-        onChange(dateStr);
-        setIsOpen(false);
+        const dateStr = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day).toLocaleDateString('en-CA');
+        onChange(dateStr); setIsOpen(false);
     };
 
     const renderCalendar = () => {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth();
-        const daysInMonth = getDaysInMonth(year, month);
-        const firstDay = getFirstDayOfMonth(year, month);
+        const year = currentMonth.getFullYear(), month = currentMonth.getMonth();
+        const daysInMonth = getDaysInMonth(year, month), firstDay = getFirstDayOfMonth(year, month);
         const days = [];
 
-        for (let i = 0; i < firstDay; i++) {
-            days.push(<div key={`empty-${i}`} className="w-8 h-8"></div>);
-        }
-
+        for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="w-8 h-8"></div>);
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = new Date(year, month, i).toLocaleDateString('en-CA');
             const isSelected = date === dateStr;
-            const isToday = new Date().toLocaleDateString('en-CA') === dateStr;
-
             let bgClass = "bg-white hover:bg-slate-100 text-slate-700";
             if (isSelected) bgClass = "bg-[#1E3A8A] text-white font-bold shadow-md";
 
             days.push(
-                <button
-                    key={i}
-                    onClick={() => handleDayClick(i)}
-                    className={`w-8 h-8 flex items-center justify-center text-xs rounded-full transition-all ${bgClass} ${isToday && !isSelected ? 'border border-[#F97316] text-[#F97316]' : ''}`}
-                >
+                <button key={i} onClick={() => handleDayClick(i)} className={`w-8 h-8 flex items-center justify-center text-xs rounded-full transition-all ${bgClass}`}>
                     {i}
                 </button>
             );
@@ -234,43 +156,28 @@ const CustomSingleDatePicker = ({
     };
 
     return (
-        <div className="relative" ref={wrapperRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="h-8 px-3 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded focus:border-[#1E3A8A] flex items-center gap-2 shadow-sm transition-colors hover:bg-slate-50 w-full justify-between"
-                title={label}
-            >
-                <span className="flex items-center gap-2">
-                    <Calendar size={14} className="text-slate-400" />
-                    <span>{date || 'Pilih Tanggal'}</span>
-                </span>
+        <div className="relative w-full" ref={wrapperRef}>
+            <button onClick={() => setIsOpen(!isOpen)} className="h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg flex items-center gap-2 shadow-sm hover:bg-slate-50 w-full" title={label}>
+                <Calendar size={16} className="text-slate-400" />
+                <span>{date || 'Pilih Tanggal Mulai'}</span>
             </button>
-
             {isOpen && (
-                <div className="absolute top-10 right-0 z-50 bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-[280px]">
+                <div className="absolute top-11 left-0 z-50 bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-[280px]">
                     <div className="flex justify-between items-center mb-4 bg-slate-50 p-1.5 rounded-lg">
                         <div className="flex gap-1">
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsLeft size={16} className="text-slate-600" /></button>
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronLeft size={16} className="text-slate-600" /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsLeft size={16} /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronLeft size={16} /></button>
                         </div>
-                        <span className="text-sm font-bold text-[#1E3A8A] text-center flex-1">
-                            {currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}
-                        </span>
+                        <span className="text-sm font-bold text-[#1E3A8A] text-center flex-1">{currentMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}</span>
                         <div className="flex gap-1">
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronRight size={16} className="text-slate-600" /></button>
-                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsRight size={16} className="text-slate-600" /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronRight size={16} /></button>
+                            <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth(), 1))} className="p-1 hover:bg-white rounded-md transition-colors"><ChevronsRight size={16} /></button>
                         </div>
                     </div>
-
                     <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                        {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (
-                            <div key={i} className="text-[10px] font-bold text-slate-400">{d}</div>
-                        ))}
+                        {['M', 'S', 'S', 'R', 'K', 'J', 'S'].map((d, i) => (<div key={i} className="text-[10px] font-bold text-slate-400">{d}</div>))}
                     </div>
-
-                    <div className="grid grid-cols-7 gap-y-1 gap-x-1 justify-items-center">
-                        {renderCalendar()}
-                    </div>
+                    <div className="grid grid-cols-7 gap-y-1 gap-x-1 justify-items-center">{renderCalendar()}</div>
                 </div>
             )}
         </div>
@@ -281,18 +188,23 @@ const CustomSingleDatePicker = ({
 // HALAMAN UTAMA DASHBOARD
 // ==================================================
 export default function DashboardContent() {
+    const { profile } = useAuth(); // <--- MENGAMBIL ROLE DARI USER YANG LOGIN
+
     const [loading, setLoading] = useState(true);
     const [rawInspeksi, setRawInspeksi] = useState<any[]>([]);
     const [rawIbppr, setRawIbppr] = useState<any[]>([]);
     const [rawIbpprHeader, setRawIbpprHeader] = useState<any[]>([]);
 
-    // FILTER CHART WILAYAH
     const [hazardWilayah, setHazardWilayah] = useState("Semua");
     const [ibprWilayah, setIbprWilayah] = useState("Semua");
 
-    // FILTER TANGGAL (GLOBAL DASHBOARD)
     const [globalStartDate, setGlobalStartDate] = useState<string>("2025-01-01");
     const [globalEndDate, setGlobalEndDate] = useState<string>("2025-12-31");
+
+    // State untuk Form KPI Proyek (Sinkronisasi dengan Database)
+    const [activeProjectId, setActiveProjectId] = useState<string>("");
+    const [kpiForm, setKpiForm] = useState({ start_date: "", workers: 0, lti: 0 });
+    const [isSavingKpi, setIsSavingKpi] = useState(false);
 
     useEffect(() => {
         const savedGlobalStart = localStorage.getItem("sri_global_start_date");
@@ -302,91 +214,12 @@ export default function DashboardContent() {
     }, []);
 
     const handleGlobalDateChange = (start: string, end: string) => {
-        setGlobalStartDate(start);
-        setGlobalEndDate(end);
+        setGlobalStartDate(start); setGlobalEndDate(end);
         localStorage.setItem("sri_global_start_date", start);
         localStorage.setItem("sri_global_end_date", end);
     };
 
     const todayStr = new Date().toLocaleDateString('en-CA');
-
-    // STRUKTUR DATA PROYEK
-    const [projects, setProjects] = useState<any[]>([
-        { id: 'global_proj', name: 'Proyek Utama (Pusat)', workers: 114, startDate: todayStr, lti: 0 }
-    ]);
-    const [activeProjectId, setActiveProjectId] = useState<string>('global_proj');
-    const [isAddingProject, setIsAddingProject] = useState(false);
-    const [newProjectName, setNewProjectName] = useState("");
-
-    useEffect(() => {
-        const savedProjects = localStorage.getItem("sri_projects_data_v2");
-        const savedActiveId = localStorage.getItem("sri_active_project_id_v2");
-
-        if (savedProjects) {
-            const parsedProjects = JSON.parse(savedProjects).map((p: any) => ({
-                ...p,
-                lti: p.lti || 0
-            }));
-            setProjects(parsedProjects);
-        }
-        if (savedActiveId) setActiveProjectId(savedActiveId);
-    }, []);
-
-    const saveProjectsToStorage = (newProjects: any[]) => {
-        setProjects(newProjects);
-        localStorage.setItem("sri_projects_data_v2", JSON.stringify(newProjects));
-    };
-
-    const handleAddProject = () => {
-        if (!newProjectName.trim()) return;
-        const newProject = {
-            id: `proj_${Date.now()}`,
-            name: newProjectName,
-            workers: 0,
-            startDate: todayStr,
-            lti: 0
-        };
-        const updatedProjects = [...projects, newProject];
-        saveProjectsToStorage(updatedProjects);
-        setActiveProjectId(newProject.id);
-        localStorage.setItem("sri_active_project_id_v2", newProject.id);
-        setNewProjectName("");
-        setIsAddingProject(false);
-    };
-
-    const updateActiveProject = (field: string, value: any) => {
-        const updatedProjects = projects.map(p =>
-            p.id === activeProjectId ? { ...p, [field]: value } : p
-        );
-        saveProjectsToStorage(updatedProjects);
-    };
-
-    const handleProjectDateChange = (date: string) => {
-        const updatedProjects = projects.map(p =>
-            p.id === activeProjectId ? { ...p, startDate: date } : p
-        );
-        saveProjectsToStorage(updatedProjects);
-    };
-
-    const handleResetProjectDate = () => {
-        const updatedProjects = projects.map(p =>
-            p.id === activeProjectId ? { ...p, startDate: todayStr } : p
-        );
-        saveProjectsToStorage(updatedProjects);
-    };
-
-    const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
-
-    // COMPUTED STATES FOR UI
-    const [stats, setStats] = useState({ open: 0, onProses: 0, closed: 0, total: 0 });
-    const [hazardChartData, setHazardChartData] = useState<any[]>([]);
-    const [ibprChartData, setIbprChartData] = useState<any[]>([]);
-
-    // STATE KPI
-    const [kpiData, setKpiData] = useState({
-        totalHariKerja: 0, jamKerjaAman: "0", accident: 0, incident: 0, nearmiss: 0,
-        lti: 0, ltifr: "0"
-    });
 
     useEffect(() => {
         fetchDashboardData();
@@ -403,17 +236,64 @@ export default function DashboardContent() {
         try {
             const { data: insData } = await supabase.from("inspeksi").select("*");
             const { data: ibpData } = await supabase.from("ibppr").select("*");
-            const { data: ibpHeadData } = await supabase.from("ibppr_header").select("*");
+            const { data: ibpHeadData } = await supabase.from("ibppr_header").select("*").order("created_at", { ascending: false });
 
             setRawInspeksi(insData || []);
             setRawIbppr(ibpData || []);
             setRawIbpprHeader(ibpHeadData || []);
+
+            if (ibpHeadData && ibpHeadData.length > 0 && !activeProjectId) {
+                const firstId = ibpHeadData[0].id.toString();
+                setActiveProjectId(firstId);
+            }
         } catch (error) {
-            console.error("Gagal memuat data dashboard", error);
+            console.error("Gagal memuat data", error);
         } finally {
             setLoading(false);
         }
     };
+
+    // Saat activeProject ganti, sinkronkan form KPI dengan data dari database
+    useEffect(() => {
+        const proj = rawIbpprHeader.find(p => p.id.toString() === activeProjectId);
+        if (proj) {
+            setKpiForm({
+                start_date: proj.start_date || todayStr,
+                workers: proj.workers || 0,
+                lti: proj.lti || 0
+            });
+        }
+    }, [activeProjectId, rawIbpprHeader]);
+
+    // Fungsi Simpan KPI ke Database
+    const saveKpiToDatabase = async () => {
+        if (!activeProjectId) return;
+        setIsSavingKpi(true);
+        try {
+            const { error } = await supabase.from("ibppr_header").update({
+                start_date: kpiForm.start_date,
+                workers: kpiForm.workers,
+                lti: kpiForm.lti
+            }).eq("id", activeProjectId);
+
+            if (error) throw error;
+            alert("Pengaturan Proyek Berhasil Disimpan!");
+            fetchDashboardData();
+        } catch (error: any) {
+            alert("Gagal menyimpan: " + error.message);
+        } finally {
+            setIsSavingKpi(false);
+        }
+    };
+
+    // COMPUTED STATES FOR UI
+    const [stats, setStats] = useState({ open: 0, onProses: 0, closed: 0, total: 0 });
+    const [hazardChartData, setHazardChartData] = useState<any[]>([]);
+    const [ibprChartData, setIbprChartData] = useState<any[]>([]);
+
+    const [kpiResult, setKpiResult] = useState({
+        totalHariKerja: 0, jamKerjaAman: "0", accident: 0, incident: 0, nearmiss: 0, ltifr: "0"
+    });
 
     useEffect(() => {
         if (loading) return;
@@ -424,12 +304,12 @@ export default function DashboardContent() {
                 const d = new Date(dateStr);
                 if (isNaN(d.getTime())) return null;
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            } catch {
-                return null;
-            }
+            } catch { return null; }
         };
 
-        // 1. DATA GLOBAL
+        const todayCurrentStr = new Date().toLocaleDateString('en-CA'); // MENCEGAH ERROR todayCurrentStr undefined
+
+        // 1. DATA GLOBAL (UNTUK KOTAK HAZARD & GRAFIK)
         const globalFilteredInspeksi = rawInspeksi.filter((item) => {
             if (!globalStartDate || !globalEndDate) return true;
             const itemDate = getSafeDateStr(item.tanggal_temuan || item.created_at);
@@ -501,14 +381,15 @@ export default function DashboardContent() {
         }
         setIbprChartData(iData);
 
+        // 2. DATA KPI PROYEK (Berdasarkan Proyek yang Dipilih)
+        const proj = rawIbpprHeader.find(p => p.id.toString() === activeProjectId);
+        if (!proj) return;
 
-        // 2. DATA PROYEK & RUMUS LTI + LTIFR
-        const todayCurrentStr = new Date().toLocaleDateString('en-CA');
+        const projStartDate = proj.start_date || todayCurrentStr;
         const projectFilteredInspeksi = rawInspeksi.filter((item) => {
-            if (!activeProject.startDate) return true;
             const itemDate = getSafeDateStr(item.tanggal_temuan || item.created_at);
             if (!itemDate) return false;
-            return itemDate >= activeProject.startDate && itemDate <= todayCurrentStr;
+            return itemDate >= projStartDate && itemDate <= todayCurrentStr;
         });
 
         let countAccident = 0, countIncident = 0, countNearmiss = 0;
@@ -539,32 +420,26 @@ export default function DashboardContent() {
             return count;
         };
 
-        const calculatedDays = getWorkingDays(activeProject.startDate, todayCurrentStr);
+        const calculatedDays = getWorkingDays(projStartDate, todayCurrentStr);
+        const workersCount = Number(proj.workers) || 0;
+        const ltiCount = Number(proj.lti) || 0;
 
-        const activeWorkersNumber = Number(activeProject.workers) || 0;
-        const activeLtiNumber = Number(activeProject.lti) || 0;
-
-        const totalJamKerjaMurni = calculatedDays * 8 * activeWorkersNumber;
-        const ltiCount = activeLtiNumber;
-
-        // Rumus LTIFR = (LTI x 1.000.000) / Total jam kerja
+        const totalJamKerjaMurni = calculatedDays * 8 * workersCount;
         const ltifrValue = totalJamKerjaMurni > 0 ? (ltiCount * 1000000) / totalJamKerjaMurni : 0;
 
-        // Jam Kerja Aman di-reset jadi 0 jika ada kecelakaan
         let jamKerjaAmanTampil = totalJamKerjaMurni;
         if (countAccident > 0) jamKerjaAmanTampil = 0;
 
-        setKpiData({
+        setKpiResult({
             totalHariKerja: calculatedDays,
             jamKerjaAman: jamKerjaAmanTampil.toLocaleString('id-ID'),
             accident: countAccident,
             incident: countIncident,
             nearmiss: countNearmiss,
-            lti: ltiCount,
             ltifr: parseFloat(ltifrValue.toFixed(2)).toLocaleString('id-ID', { maximumFractionDigits: 2 })
         });
 
-    }, [rawInspeksi, rawIbppr, rawIbpprHeader, hazardWilayah, ibprWilayah, globalStartDate, globalEndDate, activeProject, projects, loading]);
+    }, [rawInspeksi, rawIbppr, rawIbpprHeader, hazardWilayah, ibprWilayah, globalStartDate, globalEndDate, activeProjectId, loading]);
 
 
     if (loading) {
@@ -574,6 +449,9 @@ export default function DashboardContent() {
     return (
         <div className="p-4 md:p-8 space-y-6 min-h-screen bg-[#F8FAFC] font-sans print:bg-white print:p-0">
 
+            {/* ================================================== */}
+            {/* HEADER DASHBOARD */}
+            {/* ================================================== */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-[#1E3A8A] tracking-tight flex items-center gap-2">
@@ -600,189 +478,179 @@ export default function DashboardContent() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-                {/* 4 KARTU HAZARD DIPERKECIL (Tinggi Ditetapkan) */}
-                <div className="lg:col-span-6 grid grid-cols-2 gap-4 content-start">
-                    <Link href="/temuan" className="group block h-[130px]">
-                        <div className="bg-[#1E3A8A] p-4 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full border border-[#152C69]">
-                            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={18} /></div>
-                            <div>
-                                <h3 className="text-3xl font-extrabold text-white leading-none">{stats.total}</h3>
-                                <p className="text-[10px] font-semibold text-blue-100 mt-1 uppercase tracking-wider">Total Hazard</p>
-                            </div>
+            {/* ================================================== */}
+            {/* BARIS 1: 4 KARTU HAZARD UTAMA (KOTAK KECIL) */}
+            {/* ================================================== */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Link href="/temuan" className="group block">
+                    <div className="bg-[#1E3A8A] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#152C69]">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={16} /></div>
+                        <div>
+                            <h3 className="text-2xl font-extrabold text-white leading-none">{stats.total}</h3>
+                            <p className="text-[9px] font-semibold text-blue-100 mt-1 uppercase tracking-wider">Total Hazard</p>
                         </div>
-                    </Link>
-
-                    <Link href="/temuan" className="group block h-[130px]">
-                        <div className="bg-red-500 p-4 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full border border-red-600">
-                            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><AlertCircle size={18} /></div>
-                            <div>
-                                <h3 className="text-3xl font-extrabold text-white leading-none">{stats.open}</h3>
-                                <p className="text-[10px] font-semibold text-red-100 mt-1 uppercase tracking-wider">Open Hazard</p>
-                            </div>
+                    </div>
+                </Link>
+                <Link href="/temuan" className="group block">
+                    <div className="bg-red-500 p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-red-600">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><AlertCircle size={16} /></div>
+                        <div>
+                            <h3 className="text-2xl font-extrabold text-white leading-none">{stats.open}</h3>
+                            <p className="text-[9px] font-semibold text-red-100 mt-1 uppercase tracking-wider">Open Hazard</p>
                         </div>
-                    </Link>
-
-                    <Link href="/temuan" className="group block h-[130px]">
-                        <div className="bg-[#F97316] p-4 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full border border-[#EA580C]">
-                            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><Clock size={18} /></div>
-                            <div>
-                                <h3 className="text-3xl font-extrabold text-white leading-none">{stats.onProses}</h3>
-                                <p className="text-[10px] font-semibold text-orange-100 mt-1 uppercase tracking-wider">In Progress</p>
-                            </div>
+                    </div>
+                </Link>
+                <Link href="/temuan" className="group block">
+                    <div className="bg-[#F97316] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#EA580C]">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><Clock size={16} /></div>
+                        <div>
+                            <h3 className="text-2xl font-extrabold text-white leading-none">{stats.onProses}</h3>
+                            <p className="text-[9px] font-semibold text-orange-100 mt-1 uppercase tracking-wider">In Progress</p>
                         </div>
-                    </Link>
-
-                    <Link href="/temuan" className="group block h-[130px]">
-                        <div className="bg-emerald-500 p-4 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full border border-emerald-600">
-                            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><CheckCircle2 size={18} /></div>
-                            <div>
-                                <h3 className="text-3xl font-extrabold text-white leading-none">{stats.closed}</h3>
-                                <p className="text-[10px] font-semibold text-emerald-100 mt-1 uppercase tracking-wider">Closed Hazard</p>
-                            </div>
+                    </div>
+                </Link>
+                <Link href="/temuan" className="group block">
+                    <div className="bg-emerald-500 p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-emerald-600">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><CheckCircle2 size={16} /></div>
+                        <div>
+                            <h3 className="text-2xl font-extrabold text-white leading-none">{stats.closed}</h3>
+                            <p className="text-[9px] font-semibold text-emerald-100 mt-1 uppercase tracking-wider">Closed Hazard</p>
                         </div>
-                    </Link>
+                    </div>
+                </Link>
+            </div>
+
+            {/* ================================================== */}
+            {/* BARIS 2: KARTU ACCIDENT, INCIDENT, NEARMISS (KOTAK KECIL) */}
+            {/* ================================================== */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-red-500 p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-red-600">
+                    <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center"><Flame size={16} /></div>
+                    <div>
+                        <h3 className="text-2xl font-extrabold text-white leading-none">{kpiResult.accident}</h3>
+                        <p className="text-[9px] font-semibold text-red-100 mt-1 uppercase tracking-wider">Accident</p>
+                    </div>
                 </div>
+                <div className="bg-[#F97316] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#EA580C]">
+                    <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center"><AlertCircle size={16} /></div>
+                    <div>
+                        <h3 className="text-2xl font-extrabold text-white leading-none">{kpiResult.incident}</h3>
+                        <p className="text-[9px] font-semibold text-orange-100 mt-1 uppercase tracking-wider">Incident</p>
+                    </div>
+                </div>
+                <div className="bg-[#EAB308] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#CA8A04]">
+                    <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center"><Activity size={16} /></div>
+                    <div>
+                        <h3 className="text-2xl font-extrabold text-white leading-none">{kpiResult.nearmiss}</h3>
+                        <p className="text-[9px] font-semibold text-yellow-100 mt-1 uppercase tracking-wider">Nearmiss</p>
+                    </div>
+                </div>
+            </div>
 
-                {/* KARTU KPI PROYEK KHUSUS DENGAN LTI & LTIFR */}
-                <div className="lg:col-span-6 bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between relative">
-
-                    <div className="flex items-start justify-between mb-4 z-10">
-                        <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F97316]"><ShieldAlert size={18} /></div>
-                            <h2 className="text-xs font-bold text-[#1E3A8A] uppercase tracking-wide">Data KPI Proyek</h2>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                            <select
-                                value={activeProjectId}
-                                onChange={(e) => {
-                                    setActiveProjectId(e.target.value);
-                                    localStorage.setItem("sri_active_project_id_v2", e.target.value);
-                                }}
-                                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg px-2 py-1.5 outline-none focus:border-[#1E3A8A] w-36 sm:w-48 shadow-sm cursor-pointer"
-                            >
-                                {projects.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
-                                ))}
-                            </select>
-                            <button
-                                onClick={() => setIsAddingProject(!isAddingProject)}
-                                title="Tambah Proyek Manual"
-                                className="bg-[#1E3A8A] hover:bg-[#152C69] text-white p-1.5 rounded-lg border border-[#1E3A8A] transition-colors"
-                            >
-                                <Plus size={16} />
-                            </button>
-                        </div>
+            {/* ================================================== */}
+            {/* BARIS 3: DATA KPI PROYEK HANYA UNTUK ADMIN */}
+            {/* ================================================== */}
+            {profile?.role === 'admin' && (
+                <div className="bg-white p-5 md:p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col relative">
+                    <div className="flex items-center gap-3 mb-5 border-b border-slate-100 pb-3">
+                        <ShieldAlert size={20} className="text-[#F97316]" />
+                        <h2 className="text-sm md:text-base font-bold text-[#1E3A8A] uppercase tracking-wide">KPI Proyek</h2>
                     </div>
 
-                    {isAddingProject && (
-                        <div className="absolute top-14 right-5 z-20 bg-white border border-slate-200 shadow-xl rounded-lg p-3 w-64 animate-in fade-in slide-in-from-top-2">
-                            <p className="text-xs font-bold text-slate-700 mb-2">Nama Proyek Baru</p>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={newProjectName}
-                                    onChange={(e) => setNewProjectName(e.target.value)}
-                                    placeholder="Misal: Proyek A"
-                                    className="flex-1 border border-slate-200 rounded px-2 text-sm outline-none focus:border-[#F97316]"
-                                />
-                                <button onClick={handleAddProject} className="bg-[#F97316] text-white px-3 py-1 rounded text-xs font-bold">Simpan</button>
-                            </div>
-                        </div>
-                    )}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
 
-                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 mb-4">
-                        <div className="flex flex-col gap-2 border-b border-slate-200 pb-3 mb-2">
-                            <div className="flex justify-between items-center">
-                                <span className="text-xs font-semibold text-slate-500">Tanggal Mulai Proyek</span>
-                                <button
-                                    onClick={handleResetProjectDate}
-                                    className="text-[10px] text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1 border border-rose-100"
-                                    title="Kembalikan tanggal mulai ke hari ini (Reset Hari Kerja)"
-                                >
-                                    <RotateCcw size={10} /> Reset ke Hari Ini
-                                </button>
+                        {/* BAGIAN KIRI: Form Pengaturan Proyek */}
+                        <div className="space-y-4 bg-slate-50 p-5 rounded-xl border border-slate-200">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Pilih Dokumen IBPR (Proyek)</label>
+                                {rawIbpprHeader.length === 0 ? (
+                                    <p className="text-sm text-rose-500 italic border border-rose-200 bg-rose-50 p-2 rounded-lg">Belum ada proyek. Silakan buat di menu IBPR.</p>
+                                ) : (
+                                    <select
+                                        value={activeProjectId}
+                                        onChange={(e) => setActiveProjectId(e.target.value)}
+                                        className="w-full h-10 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
+                                    >
+                                        {rawIbpprHeader.map(p => (
+                                            <option key={p.id} value={p.id}>{p.project || "Tanpa Nama"}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
-                            <CustomSingleDatePicker
-                                date={activeProject.startDate}
-                                onChange={handleProjectDateChange}
-                            />
-                        </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                            <div>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Hari Kerja</p>
-                                <p className="text-sm font-black text-[#1E3A8A]">{kpiData.totalHariKerja} <span className="text-xs font-semibold text-slate-500">Hari</span></p>
-                            </div>
-                            <div className="border-l border-r border-slate-200">
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Jam Kerja</p>
-                                <p className="text-sm font-black text-[#1E3A8A]">8 <span className="text-xs font-semibold text-slate-500">Jam/Hari</span></p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-0.5">Jml Pekerja</p>
-                                <input
-                                    type="number"
-                                    value={activeProject.workers ?? ""}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        updateActiveProject('workers', val === "" ? "" : Number(val));
-                                    }}
-                                    title="Ubah jumlah pekerja untuk proyek ini"
-                                    className="w-16 mx-auto text-sm font-black text-[#1E3A8A] text-center bg-white border border-slate-300 focus:border-[#F97316] outline-none rounded py-0.5 shadow-sm transition-colors"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 border-t border-slate-100 pt-3 mb-4">
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-semibold text-slate-500 flex items-center gap-1"><Flame size={12} className="text-red-500" /> Accident</span>
-                            <span className="text-base font-bold text-slate-800">{kpiData.accident}</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-semibold text-slate-500 flex items-center gap-1"><AlertCircle size={12} className="text-orange-500" /> Incident</span>
-                            <span className="text-base font-bold text-slate-800">{kpiData.incident}</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-semibold text-slate-500 flex items-center gap-1"><Activity size={12} className="text-yellow-500" /> Nearmiss</span>
-                            <span className="text-base font-bold text-slate-800">{kpiData.nearmiss}</span>
-                        </div>
-                    </div>
-
-                    <div className="mt-auto flex flex-col z-10 shadow-md rounded-lg overflow-hidden border border-[#152C69]">
-                        <div className="bg-[#1E3A8A] px-4 py-2.5 flex justify-between items-center">
-                            <span className="text-[11px] font-semibold text-blue-100 uppercase tracking-wider">Total Jam Kerja Aman</span>
-                            <span className="text-xl font-black text-white">{kpiData.jamKerjaAman}</span>
-                        </div>
-
-                        <div className="bg-[#152C69] px-4 py-2 flex justify-between items-center border-t border-blue-800/50">
-                            <div className="flex flex-col">
-                                <span className="text-[9px] text-blue-200 font-semibold uppercase mb-0.5">LTI (Kasus)</span>
-                                <div className="flex items-center gap-2">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Tgl Mulai Proyek</label>
+                                    <CustomSingleDatePicker
+                                        date={kpiForm.start_date}
+                                        onChange={(date: string) => setKpiForm({ ...kpiForm, start_date: date })}
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Jml Pekerja</label>
                                     <input
                                         type="number"
-                                        value={activeProject.lti ?? ""}
+                                        min="0"
+                                        value={kpiForm.workers === 0 ? "" : kpiForm.workers}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            updateActiveProject('lti', val === "" ? "" : Number(val));
+                                            setKpiForm({ ...kpiForm, workers: val === "" ? 0 : Math.max(0, Number(val)) });
                                         }}
-                                        title="Ubah angka LTI di sini"
-                                        className="w-16 bg-blue-900/50 border border-blue-700 text-white text-sm font-bold rounded px-1.5 py-0.5 outline-none focus:border-[#F97316] transition-colors"
+                                        className="w-full h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
                                     />
                                 </div>
                             </div>
-                            <div className="flex flex-col text-right">
-                                <span className="text-[9px] text-blue-200 font-semibold uppercase mb-0.5">LTIFR (Rate)</span>
-                                <span className="text-sm font-bold text-white">{kpiData.ltifr}</span>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-500 uppercase text-rose-600">LTI (Lost Time Injury) Kasus</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={kpiForm.lti === 0 ? "" : kpiForm.lti}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setKpiForm({ ...kpiForm, lti: val === "" ? 0 : Math.max(0, Number(val)) });
+                                    }}
+                                    className="w-full h-9 px-3 bg-white border border-slate-300 text-rose-600 text-sm font-bold rounded-lg shadow-sm outline-none focus:border-rose-500"
+                                />
+                            </div>
+
+                            <button
+                                onClick={saveKpiToDatabase}
+                                disabled={!activeProjectId || isSavingKpi}
+                                className="w-full bg-[#1E3A8A] hover:bg-[#152C69] text-white py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                            >
+                                <Save size={16} /> {isSavingKpi ? "Menyimpan..." : "Simpan"}
+                            </button>
+                        </div>
+
+                        {/* BAGIAN KANAN: Hasil Perhitungan (List View) */}
+                        <div className="flex flex-col justify-center gap-4 bg-white">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-slate-500 text-sm font-medium">Total Hari Kerja Proyek</span>
+                                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-md">{kpiResult.totalHariKerja} Hari</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-slate-500 text-sm font-medium">Jam Kerja Harian</span>
+                                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-md">8 Jam / Hari</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <span className="text-slate-500 text-sm font-medium">Total Jam Kerja Aman <span className="text-[10px] text-rose-400 block">(Akan nol jika ada Accident)</span></span>
+                                <span className="font-black text-[#1E3A8A] text-2xl bg-blue-50 px-4 py-1.5 rounded-lg border border-blue-100">{kpiResult.jamKerjaAman}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-2">
+                                <span className="text-slate-500 text-sm font-medium">LTIFR (Frequency Rate)</span>
+                                <span className="font-black text-rose-600 text-2xl bg-rose-50 px-4 py-1.5 rounded-lg border border-rose-100">{kpiResult.ltifr}</span>
                             </div>
                         </div>
+
                     </div>
                 </div>
+            )}
 
-            </div>
-
+            {/* ================================================== */}
+            {/* BARIS 4: HAZARD REPORT CHART */}
+            {/* ================================================== */}
             <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col h-[450px]">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-base font-bold text-[#1E3A8A]">Hazard Report Chart</h2>
@@ -817,6 +685,9 @@ export default function DashboardContent() {
                 </div>
             </div>
 
+            {/* ================================================== */}
+            {/* BARIS 5: HAZARD STATUS DETAILS TABLE */}
+            {/* ================================================== */}
             <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                 <h2 className="text-base font-bold text-[#1E3A8A] mb-4">Hazard Status Details</h2>
                 <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -867,6 +738,9 @@ export default function DashboardContent() {
                 </div>
             </div>
 
+            {/* ================================================== */}
+            {/* BARIS 6: IBPR CHART */}
+            {/* ================================================== */}
             <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col h-[450px]">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-base font-bold text-[#1E3A8A]">IBPR Chart</h2>

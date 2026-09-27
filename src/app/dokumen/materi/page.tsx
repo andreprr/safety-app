@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/components/AuthProvider"; // <-- Impor context auth
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -9,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FileText, Plus, Trash2, Download, Eye, Loader2, MonitorPlay, X } from "lucide-react";
 
 export default function MateriPage() {
+    const { profile } = useAuth(); // <-- Ambil data profil user
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,6 +73,11 @@ export default function MateriPage() {
     };
 
     const handleDelete = async (id: string, fileUrl: string) => {
+        // Validasi keamanan: Tolak jika bukan admin
+        if (profile?.role !== 'admin') {
+            return alert("Akses ditolak! Hanya Admin yang berhak menghapus materi.");
+        }
+
         if (!window.confirm("Hapus materi ini?")) return;
         try {
             const fileName = fileUrl.split('/').pop();
@@ -186,9 +193,16 @@ export default function MateriPage() {
                                                     <Download size={14} /> Unduh
                                                 </a>
 
-                                                <button onClick={() => handleDelete(row.id, row.file_url)} className="p-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors" title="Hapus">
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                {/* Tombol Hapus Hanya untuk Admin */}
+                                                {profile?.role === 'admin' && (
+                                                    <button
+                                                        onClick={() => handleDelete(row.id, row.file_url)}
+                                                        className="p-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors"
+                                                        title="Hapus"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>

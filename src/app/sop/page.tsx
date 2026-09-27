@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/components/AuthProvider"; // <-- Impor context auth
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Search, Plus, FileText, Download, Trash2, Folder, FolderOpen, Eye, Loader2 } from "lucide-react";
 
 export default function DokumenSopPage() {
+  const { profile } = useAuth(); // <-- Ambil data profil user
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,6 +83,11 @@ export default function DokumenSopPage() {
   };
 
   const handleDelete = async (id: number, fileUrl: string) => {
+    // Validasi tambahan: Cegah eksekusi jika bukan admin
+    if (profile?.role !== 'admin') {
+      return alert("Akses ditolak! Hanya Admin yang berhak menghapus dokumen.");
+    }
+
     if (!window.confirm("Yakin ingin menghapus dokumen ini?")) return;
     try {
       const fileName = fileUrl.split('/').pop();
@@ -244,9 +251,12 @@ export default function DokumenSopPage() {
                         </Button>
                       </a>
 
-                      <Button size="sm" variant="outline" onClick={() => handleDelete(doc.id, doc.file_url)} className="h-8 w-8 p-0 bg-red-50 hover:bg-red-100 text-red-600 border-red-200" title="Hapus">
-                        <Trash2 size={14} />
-                      </Button>
+                      {/* Tombol Hapus Hanya untuk Admin */}
+                      {profile?.role === 'admin' && (
+                        <Button size="sm" variant="outline" onClick={() => handleDelete(doc.id, doc.file_url)} className="h-8 w-8 p-0 bg-red-50 hover:bg-red-100 text-red-600 border-red-200" title="Hapus">
+                          <Trash2 size={14} />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

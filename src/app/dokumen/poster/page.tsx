@@ -4,10 +4,12 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/components/AuthProvider"; // <-- Impor context auth
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Image as ImageIcon, Plus, Trash2, Eye, Loader2, Download, X } from "lucide-react";
 
 export default function PosterPage() {
+    const { profile } = useAuth();
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,6 +72,9 @@ export default function PosterPage() {
     };
 
     const handleDelete = async (id: string, fileUrl: string) => {
+        if (profile?.role !== 'admin') {
+            return alert("Akses ditolak! Hanya Admin yang berhak menghapus materi.");
+        }
         if (!window.confirm("Hapus poster ini?")) return;
         try {
             const fileName = fileUrl.split('/').pop();
@@ -182,9 +187,15 @@ export default function PosterPage() {
                                             >
                                                 <Download size={18} />
                                             </a>
-                                            <button onClick={() => handleDelete(item.id, item.file_url)} className="p-3 bg-red-500 text-white rounded-full hover:scale-110 transition-transform shadow-lg" title="Hapus">
-                                                <Trash2 size={18} />
-                                            </button>
+                                            {profile?.role === 'admin' && (
+                                                <button
+                                                    onClick={() => handleDelete(item.id, item.file_url)}
+                                                    className="p-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors"
+                                                    title="Hapus"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
