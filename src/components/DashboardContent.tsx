@@ -3,14 +3,14 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/components/AuthProvider"; // <-- Mengambil data profil user yang sedang login
+import { useAuth } from "@/components/AuthProvider"; // Mengambil data profil (admin/user)
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer
 } from "recharts";
 import {
     FileText, AlertCircle, Clock, CheckCircle2, Flame, ShieldAlert,
     Activity, Download, MapPin, ChevronLeft, ChevronRight,
-    ChevronsLeft, ChevronsRight, Calendar, CalendarDays, Save
+    ChevronsLeft, ChevronsRight, Calendar, CalendarDays, Save, Plus, Trash2
 } from "lucide-react";
 
 const ALL_AREAS = [
@@ -188,11 +188,14 @@ const CustomSingleDatePicker = ({ date, onChange, label = "Pilih Tanggal Mulai P
 // HALAMAN UTAMA DASHBOARD
 // ==================================================
 export default function DashboardContent() {
-    const { profile } = useAuth(); // <--- MENGAMBIL ROLE DARI USER YANG LOGIN
+    const { profile } = useAuth(); // Identifikasi Admin
 
     const [loading, setLoading] = useState(true);
     const [rawInspeksi, setRawInspeksi] = useState<any[]>([]);
     const [rawIbppr, setRawIbppr] = useState<any[]>([]);
+
+    // state baru untuk mengambil data proyek dari tabel "proyek"
+    const [rawProyek, setRawProyek] = useState<any[]>([]);
     const [rawIbpprHeader, setRawIbpprHeader] = useState<any[]>([]);
 
     const [hazardWilayah, setHazardWilayah] = useState("Semua");
@@ -201,10 +204,13 @@ export default function DashboardContent() {
     const [globalStartDate, setGlobalStartDate] = useState<string>("2025-01-01");
     const [globalEndDate, setGlobalEndDate] = useState<string>("2025-12-31");
 
-    // State untuk Form KPI Proyek (Sinkronisasi dengan Database)
+    // State form KPI & Tambah Proyek
     const [activeProjectId, setActiveProjectId] = useState<string>("");
     const [kpiForm, setKpiForm] = useState({ start_date: "", workers: 0, lti: 0 });
     const [isSavingKpi, setIsSavingKpi] = useState(false);
+
+    const [isAddingProject, setIsAddingProject] = useState(false);
+    const [newProjectName, setNewProjectName] = useState("");
 
     useEffect(() => {
         const savedGlobalStart = localStorage.getItem("sri_global_start_date");
@@ -226,7 +232,7 @@ export default function DashboardContent() {
         const channel = supabase.channel('realtime-dashboard')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'inspeksi' }, fetchDashboardData)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'ibppr' }, fetchDashboardData)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'ibppr_header' }, fetchDashboardData)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'proyek' }, fetchDashboardData)
             .subscribe();
         return () => { supabase.removeChannel(channel); };
     }, []);
@@ -236,15 +242,18 @@ export default function DashboardContent() {
         try {
             const { data: insData } = await supabase.from("inspeksi").select("*");
             const { data: ibpData } = await supabase.from("ibppr").select("*");
-            const { data: ibpHeadData } = await supabase.from("ibppr_header").select("*").order("created_at", { ascending: false });
+            const { data: ibpHeadData } = await supabase.from("ibppr_header").select("*");
+
+            // Ambil data proyek dari tabel baru
+            const { data: proyekData } = await supabase.from("proyek").select("*").order("created_at", { ascending: false });
 
             setRawInspeksi(insData || []);
             setRawIbppr(ibpData || []);
             setRawIbpprHeader(ibpHeadData || []);
+            setRawProyek(proyekData || []);
 
-            if (ibpHeadData && ibpHeadData.length > 0 && !activeProjectId) {
-                const firstId = ibpHeadData[0].id.toString();
-                setActiveProjectId(firstId);
+            if (proyekData && proyekData.length > 0 && !activeProjectId) {
+                setActiveProjectId(proyekData[0].id.toString());
             }
         } catch (error) {
             console.error("Gagal memuat data", error);
@@ -253,9 +262,9 @@ export default function DashboardContent() {
         }
     };
 
-    // Saat activeProject ganti, sinkronkan form KPI dengan data dari database
+    // Sinkronisasi data proyek yang dipilih dengan Form KPI
     useEffect(() => {
-        const proj = rawIbpprHeader.find(p => p.id.toString() === activeProjectId);
+        const proj = rawProyek.find(p => p.id.toString() === activeProjectId);
         if (proj) {
             setKpiForm({
                 start_date: proj.start_date || todayStr,
@@ -263,14 +272,61 @@ export default function DashboardContent() {
                 lti: proj.lti || 0
             });
         }
-    }, [activeProjectId, rawIbpprHeader]);
+    }, [activeProjectId, rawProyek]);
 
-    // Fungsi Simpan KPI ke Database
+    // Fungsi Tambah Proyek Baru ke Database
+    const handleAddProject = async () => {
+        if (!newProjectName.trim()) return;
+        setIsSavingKpi(true);
+        try {
+            const { data, error } = await supabase.from("proyek").insert([{
+                nama_proyek: newProjectName,
+                start_date: todayStr,
+                workers: 0,
+                lti: 0
+            }]).select();
+
+            if (error) throw error;
+            alert("Proyek baru berhasil ditambahkan!");
+            setNewProjectName("");
+            setIsAddingProject(false);
+            if (data && data.length > 0) {
+                setActiveProjectId(data[0].id.toString());
+            }
+            fetchDashboardData();
+        } catch (error: any) {
+            alert("Gagal menambah proyek: " + error.message);
+        } finally {
+            setIsSavingKpi(false);
+        }
+    };
+
+    // Fungsi Hapus Proyek
+    const handleDeleteProject = async () => {
+        if (!activeProjectId) return;
+        if (!window.confirm("PERINGATAN: Apakah Anda yakin ingin menghapus proyek ini beserta datanya secara permanen?")) return;
+
+        setIsSavingKpi(true);
+        try {
+            const { error } = await supabase.from("proyek").delete().eq("id", activeProjectId);
+            if (error) throw error;
+
+            alert("Proyek berhasil dihapus!");
+            setActiveProjectId(""); // Reset pilihan dropdown
+            fetchDashboardData();
+        } catch (error: any) {
+            alert("Gagal menghapus proyek: " + error.message);
+        } finally {
+            setIsSavingKpi(false);
+        }
+    };
+
+    // Fungsi Simpan KPI ke Database Proyek
     const saveKpiToDatabase = async () => {
         if (!activeProjectId) return;
         setIsSavingKpi(true);
         try {
-            const { error } = await supabase.from("ibppr_header").update({
+            const { error } = await supabase.from("proyek").update({
                 start_date: kpiForm.start_date,
                 workers: kpiForm.workers,
                 lti: kpiForm.lti
@@ -307,7 +363,7 @@ export default function DashboardContent() {
             } catch { return null; }
         };
 
-        const todayCurrentStr = new Date().toLocaleDateString('en-CA'); // MENCEGAH ERROR todayCurrentStr undefined
+        const todayCurrentStr = new Date().toLocaleDateString('en-CA');
 
         // 1. DATA GLOBAL (UNTUK KOTAK HAZARD & GRAFIK)
         const globalFilteredInspeksi = rawInspeksi.filter((item) => {
@@ -381,11 +437,10 @@ export default function DashboardContent() {
         }
         setIbprChartData(iData);
 
-        // 2. DATA KPI PROYEK (Berdasarkan Proyek yang Dipilih)
-        const proj = rawIbpprHeader.find(p => p.id.toString() === activeProjectId);
-        if (!proj) return;
+        // 2. DATA KPI PROYEK (Berdasarkan Tabel Proyek)
+        const proj = rawProyek.find(p => p.id.toString() === activeProjectId);
+        const projStartDate = proj?.start_date || todayCurrentStr;
 
-        const projStartDate = proj.start_date || todayCurrentStr;
         const projectFilteredInspeksi = rawInspeksi.filter((item) => {
             const itemDate = getSafeDateStr(item.tanggal_temuan || item.created_at);
             if (!itemDate) return false;
@@ -421,8 +476,8 @@ export default function DashboardContent() {
         };
 
         const calculatedDays = getWorkingDays(projStartDate, todayCurrentStr);
-        const workersCount = Number(proj.workers) || 0;
-        const ltiCount = Number(proj.lti) || 0;
+        const workersCount = Number(proj?.workers) || 0;
+        const ltiCount = Number(proj?.lti) || 0;
 
         const totalJamKerjaMurni = calculatedDays * 8 * workersCount;
         const ltifrValue = totalJamKerjaMurni > 0 ? (ltiCount * 1000000) / totalJamKerjaMurni : 0;
@@ -439,7 +494,7 @@ export default function DashboardContent() {
             ltifr: parseFloat(ltifrValue.toFixed(2)).toLocaleString('id-ID', { maximumFractionDigits: 2 })
         });
 
-    }, [rawInspeksi, rawIbppr, rawIbpprHeader, hazardWilayah, ibprWilayah, globalStartDate, globalEndDate, activeProjectId, loading]);
+    }, [rawInspeksi, rawIbppr, rawIbpprHeader, rawProyek, hazardWilayah, ibprWilayah, globalStartDate, globalEndDate, activeProjectId, loading]);
 
 
     if (loading) {
@@ -483,11 +538,11 @@ export default function DashboardContent() {
             {/* ================================================== */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <Link href="/temuan" className="group block">
-                    <div className="bg-[#1E3A8A] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#152C69]">
+                    <div className="bg-slate-500 p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-slate-600">
                         <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={16} /></div>
                         <div>
                             <h3 className="text-2xl font-extrabold text-white leading-none">{stats.total}</h3>
-                            <p className="text-[9px] font-semibold text-blue-100 mt-1 uppercase tracking-wider">Total Hazard</p>
+                            <p className="text-[9px] font-semibold text-slate-100 mt-1 uppercase tracking-wider">Total Hazard</p>
                         </div>
                     </div>
                 </Link>
@@ -548,99 +603,155 @@ export default function DashboardContent() {
             </div>
 
             {/* ================================================== */}
-            {/* BARIS 3: DATA KPI PROYEK HANYA UNTUK ADMIN */}
+            {/* BARIS 3: MONITORING PROYEK (HANYA ADMIN) */}
             {/* ================================================== */}
             {profile?.role === 'admin' && (
                 <div className="bg-white p-5 md:p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col relative">
                     <div className="flex items-center gap-3 mb-5 border-b border-slate-100 pb-3">
                         <ShieldAlert size={20} className="text-[#F97316]" />
-                        <h2 className="text-sm md:text-base font-bold text-[#1E3A8A] uppercase tracking-wide">KPI Proyek</h2>
+                        <h2 className="text-sm md:text-base font-bold text-[#1E3A8A] uppercase tracking-wide">Monitoring Proyek</h2>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
 
                         {/* BAGIAN KIRI: Form Pengaturan Proyek */}
-                        <div className="space-y-4 bg-slate-50 p-5 rounded-xl border border-slate-200">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Pilih Dokumen IBPR (Proyek)</label>
-                                {rawIbpprHeader.length === 0 ? (
-                                    <p className="text-sm text-rose-500 italic border border-rose-200 bg-rose-50 p-2 rounded-lg">Belum ada proyek. Silakan buat di menu IBPR.</p>
-                                ) : (
-                                    <select
-                                        value={activeProjectId}
-                                        onChange={(e) => setActiveProjectId(e.target.value)}
-                                        className="w-full h-10 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
-                                    >
-                                        {rawIbpprHeader.map(p => (
-                                            <option key={p.id} value={p.id}>{p.project || "Tanpa Nama"}</option>
-                                        ))}
-                                    </select>
-                                )}
-                            </div>
+                        <div className="flex flex-col bg-slate-50 p-5 rounded-xl border border-slate-200 justify-between">
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Nama Proyek</label>
+                                    <div className="flex gap-2">
+                                        {rawProyek.length === 0 ? (
+                                            <p className="text-sm text-slate-500 italic border border-slate-300 bg-white p-2 rounded-lg flex-1">Belum ada proyek.</p>
+                                        ) : (
+                                            <select
+                                                value={activeProjectId}
+                                                onChange={(e) => setActiveProjectId(e.target.value)}
+                                                className="flex-1 h-10 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
+                                            >
+                                                {rawProyek.map(p => (
+                                                    <option key={p.id} value={p.id}>{p.nama_proyek}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        <button
+                                            onClick={() => setIsAddingProject(!isAddingProject)}
+                                            title="Tambah Proyek Baru"
+                                            className="bg-[#1E3A8A] hover:bg-[#152C69] text-white rounded-lg transition-colors flex items-center justify-center w-10 shrink-0 shadow-sm h-10"
+                                        >
+                                            <Plus size={18} />
+                                        </button>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Tgl Mulai Proyek</label>
-                                    <CustomSingleDatePicker
-                                        date={kpiForm.start_date}
-                                        onChange={(date: string) => setKpiForm({ ...kpiForm, start_date: date })}
-                                    />
+                                        {/* TOMBOL HAPUS PROYEK (Baru Ditambahkan) */}
+                                        {rawProyek.length > 0 && (
+                                            <button
+                                                onClick={handleDeleteProject}
+                                                disabled={isSavingKpi}
+                                                title="Hapus Proyek Ini"
+                                                className="bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors flex items-center justify-center w-10 shrink-0 shadow-sm h-10 border border-red-200 disabled:opacity-50"
+                                            >
+                                                <Trash2 size={18} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {isAddingProject && (
+                                        <div className="mt-2 p-3 bg-white border border-slate-200 shadow-sm rounded-lg flex gap-2 animate-in fade-in slide-in-from-top-2">
+                                            <input
+                                                type="text"
+                                                value={newProjectName}
+                                                onChange={(e) => setNewProjectName(e.target.value)}
+                                                placeholder="Ketik nama proyek baru..."
+                                                className="flex-1 border border-slate-300 rounded-md px-3 text-sm outline-none focus:border-[#F97316]"
+                                            />
+                                            <button onClick={handleAddProject} disabled={isSavingKpi} className="bg-[#F97316] hover:bg-[#EA580C] text-white px-4 py-1.5 rounded-md text-xs font-bold transition-colors">
+                                                {isSavingKpi ? "..." : "Simpan"}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Tgl Mulai Proyek</label>
+                                        <CustomSingleDatePicker
+                                            date={kpiForm.start_date}
+                                            onChange={(date: string) => setKpiForm({ ...kpiForm, start_date: date })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Jml Pekerja</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={kpiForm.workers === 0 ? "" : kpiForm.workers}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setKpiForm({ ...kpiForm, workers: val === "" ? 0 : Math.max(0, Number(val)) });
+                                            }}
+                                            className="w-full h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
+                                        />
+                                    </div>
+                                </div>
+
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Jml Pekerja</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase text-rose-600">LTI (Lost Time Injury) Kasus</label>
                                     <input
                                         type="number"
                                         min="0"
-                                        value={kpiForm.workers === 0 ? "" : kpiForm.workers}
+                                        value={kpiForm.lti === 0 ? "" : kpiForm.lti}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            setKpiForm({ ...kpiForm, workers: val === "" ? 0 : Math.max(0, Number(val)) });
+                                            setKpiForm({ ...kpiForm, lti: val === "" ? 0 : Math.max(0, Number(val)) });
                                         }}
-                                        className="w-full h-9 px-3 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg shadow-sm outline-none focus:border-[#1E3A8A]"
+                                        className="w-full h-9 px-3 bg-white border border-slate-300 text-rose-600 text-sm font-bold rounded-lg shadow-sm outline-none focus:border-rose-500"
                                     />
+                                </div>
+
+                                <button
+                                    onClick={saveKpiToDatabase}
+                                    disabled={!activeProjectId || isSavingKpi}
+                                    className="w-full bg-[#1E3A8A] hover:bg-[#152C69] text-white py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    <Save size={16} /> {isSavingKpi ? "Menyimpan..." : "Simpan Pengaturan Proyek"}
+                                </button>
+                            </div>
+
+                            {/* Ringkasan Hari Kerja */}
+                            <div className="flex justify-between items-center border-t border-slate-200 pt-3 mt-4">
+                                <span className="text-slate-500 text-xs font-semibold">Total Hari Kerja Proyek berjalan:</span>
+                                <span className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">{kpiResult.totalHariKerja} Hari</span>
+                            </div>
+                        </div>
+
+                        {/* BAGIAN KANAN: Hasil KPI (Desain Compact, 1 Baris Utama) */}
+                        <div className="flex flex-col justify-center h-full space-y-3">
+                            <div className="flex flex-col shadow-sm rounded-xl overflow-hidden border border-slate-200">
+                                {/* Baris Atas (Biru Muda) */}
+                                <div className="bg-[#1E3A8A] px-5 py-4 flex justify-between items-center">
+                                    <span className="text-xs md:text-sm font-bold text-white uppercase tracking-wider">Total Jam Kerja Aman</span>
+                                    <span className="text-2xl font-black text-white">{kpiResult.jamKerjaAman}</span>
+                                </div>
+
+                                {/* Baris Bawah (Abu-Abu) */}
+                                <div className="bg-slate-500 px-5 py-4 flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-slate-200 font-semibold uppercase mb-0.5">LTI (Kasus)</span>
+                                        <span className="text-lg font-bold text-white">{kpiForm.lti}</span>
+                                    </div>
+                                    <div className="flex flex-col text-right">
+                                        <span className="text-[10px] text-slate-200 font-semibold uppercase mb-0.5">LTIFR (Rate)</span>
+                                        <span className="text-lg font-bold text-white">{kpiResult.ltifr}</span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase text-rose-600">LTI (Lost Time Injury) Kasus</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    value={kpiForm.lti === 0 ? "" : kpiForm.lti}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        setKpiForm({ ...kpiForm, lti: val === "" ? 0 : Math.max(0, Number(val)) });
-                                    }}
-                                    className="w-full h-9 px-3 bg-white border border-slate-300 text-rose-600 text-sm font-bold rounded-lg shadow-sm outline-none focus:border-rose-500"
-                                />
-                            </div>
-
-                            <button
-                                onClick={saveKpiToDatabase}
-                                disabled={!activeProjectId || isSavingKpi}
-                                className="w-full bg-[#1E3A8A] hover:bg-[#152C69] text-white py-2.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
-                            >
-                                <Save size={16} /> {isSavingKpi ? "Menyimpan..." : "Simpan"}
-                            </button>
-                        </div>
-
-                        {/* BAGIAN KANAN: Hasil Perhitungan (List View) */}
-                        <div className="flex flex-col justify-center gap-4 bg-white">
-                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                                <span className="text-slate-500 text-sm font-medium">Total Hari Kerja Proyek</span>
-                                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-md">{kpiResult.totalHariKerja} Hari</span>
-                            </div>
-                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                                <span className="text-slate-500 text-sm font-medium">Jam Kerja Harian</span>
-                                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-md">8 Jam / Hari</span>
-                            </div>
-                            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                                <span className="text-slate-500 text-sm font-medium">Total Jam Kerja Aman <span className="text-[10px] text-rose-400 block">(Akan nol jika ada Accident)</span></span>
-                                <span className="font-black text-[#1E3A8A] text-2xl bg-blue-50 px-4 py-1.5 rounded-lg border border-blue-100">{kpiResult.jamKerjaAman}</span>
-                            </div>
-                            <div className="flex justify-between items-center pt-2">
-                                <span className="text-slate-500 text-sm font-medium">LTIFR (Frequency Rate)</span>
-                                <span className="font-black text-rose-600 text-2xl bg-rose-50 px-4 py-1.5 rounded-lg border border-rose-100">{kpiResult.ltifr}</span>
+                            {/* Catatan Bantuan di Ruang Kosong */}
+                            <div className="flex items-start gap-2 bg-blue-50/50 p-3 rounded-lg border border-blue-100 shadow-sm">
+                                <ShieldAlert size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                                <p className="text-[10px] text-slate-500 leading-relaxed">
+                                    Total jam kerja aman dihitung otomatis dari <br /><b>(Hari Kerja × 8 Jam × Jumlah Pekerja)</b>.<br />
+                                    Angka ini akan <b>ter-reset menjadi 0</b> jika terdapat laporan temuan inspeksi dengan kategori <b>Accident</b>.
+                                </p>
                             </div>
                         </div>
 
@@ -721,10 +832,10 @@ export default function DashboardContent() {
                                     <td key={loc.lokasi} className="p-4 text-slate-700">{loc.closed}</td>
                                 ))}
                             </tr>
-                            <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                                <td className="p-4 text-left font-medium text-[#1E3A8A] bg-slate-50 sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Total Hazard</td>
+                            <tr className="border-b border-slate-300 bg-slate-200 hover:bg-slate-300 transition-colors">
+                                <td className="p-4 text-left font-bold text-slate-800 bg-slate-200 sticky left-0 z-10 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Total Hazard</td>
                                 {hazardChartData.map(loc => (
-                                    <td key={loc.lokasi} className="p-4 font-bold text-slate-800 bg-slate-50/50">{loc.total}</td>
+                                    <td key={loc.lokasi} className="p-4 font-bold text-slate-900 bg-slate-200">{loc.total}</td>
                                 ))}
                             </tr>
                             <tr className="hover:bg-slate-50/50 transition-colors">

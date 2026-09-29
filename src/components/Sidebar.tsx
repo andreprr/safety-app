@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/components/AuthProvider"; // <-- 1. Impor context auth
+import { useAuth } from "@/components/AuthProvider";
 import {
   LayoutDashboard, FileSpreadsheet, ClipboardCheck, AlertOctagon, MonitorPlay,
   PanelLeftClose, PanelLeft, Globe, Leaf, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
@@ -12,7 +12,7 @@ import {
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (val: boolean) => void }) {
   const pathname = usePathname();
-  const { profile } = useAuth(); // <-- 2. Ambil data profil (termasuk role)
+  const { profile } = useAuth();
   const [isDokumenOpen, setIsDokumenOpen] = useState(false);
 
   useEffect(() => {
@@ -41,7 +41,6 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
     { name: "SRI", path: "/sri", icon: <Globe size={20} /> },
   ];
 
-  // Menambahkan menu khusus Admin
   const adminItems = [
     { name: "Registrasi User", path: "/register", icon: <UserPlus size={20} /> },
     { name: "Manajemen User", path: "/manajemen-user", icon: <UserCog size={20} /> },
@@ -67,40 +66,40 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
         />
       )}
 
-      {/* Sidebar Utama */}
-      <aside className={`fixed top-0 left-0 h-screen w-[280px] bg-[#1E3A8A] text-white shadow-2xl z-[100] flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      {/* Sidebar Utama - DIUBAH MENJADI BIRU MUDA (bg-blue-600) */}
+      <aside className={`fixed top-0 left-0 h-screen w-[280px] bg-blue-600 text-white shadow-2xl z-[100] flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
         {/* HEADER SIDEBAR */}
-        <div className="h-[70px] shrink-0 p-6 flex items-center justify-between border-b border-blue-800/50">
+        <div className="h-[70px] shrink-0 p-6 flex items-center justify-between border-b border-blue-500/50">
           <div className="flex items-center gap-3">
             <img src="/KAI Properti.png" alt="Logo KAI Properti" className="w-10 h-10 object-contain drop-shadow-sm" />
             <div className="flex flex-col">
               <span className="font-black italic text-xl tracking-wider text-white leading-none">KONSISTEN</span>
-              <span className="text-[9px] text-blue-200 mt-1.5 tracking-tight font-medium opacity-90">by KAI Properti</span>
+              <span className="text-[9px] text-blue-100 mt-1.5 tracking-tight font-medium opacity-90">by KAI Properti</span>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIsOpen(false)}
-            className="text-blue-300 hover:text-white p-2 cursor-pointer bg-blue-900/50 rounded-lg transition-colors"
+            className="text-blue-100 hover:text-white p-2 cursor-pointer bg-blue-700/50 rounded-lg transition-colors"
           >
             <PanelLeftClose size={22} />
           </button>
         </div>
 
         {/* MENU UTAMA */}
-        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1 scrollbar-thin scrollbar-thumb-blue-700 scrollbar-track-transparent">
-          <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mb-3 px-3">Main Menu</div>
+        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1 scrollbar-thin scrollbar-thumb-blue-400 scrollbar-track-transparent">
+          <div className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-3 px-3">Main Menu</div>
 
           {navItems.map((item) => {
             const isActive = pathname === item.path;
             return (
               <Link key={item.name} href={item.path} onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
                 <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ${isActive
-                  ? "bg-blue-800/80 text-white shadow-md border-l-4 border-[#F97316]"
-                  : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-l-4 border-transparent"
+                  ? "bg-blue-700 text-white shadow-md border-l-4 border-[#F97316]"
+                  : "text-blue-50 hover:bg-blue-500/50 hover:text-white border-l-4 border-transparent"
                   }`}>
-                  <div className={isActive ? "text-[#F97316]" : "text-blue-300"}>{item.icon}</div>
+                  <div className={isActive ? "text-[#F97316]" : "text-blue-200"}>{item.icon}</div>
                   {item.name}
                 </div>
               </Link>
@@ -111,26 +110,26 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
             <button
               onClick={() => setIsDokumenOpen(!isDokumenOpen)}
               className={`w-full flex items-center justify-between px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${pathname.includes('/dokumen') || isDokumenOpen
-                ? "bg-blue-800/40 text-white border-transparent"
-                : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                ? "bg-blue-700/40 text-white border-transparent"
+                : "text-blue-50 hover:bg-blue-500/50 hover:text-white border-transparent"
                 }`}
             >
               <div className="flex items-center gap-3">
-                <div className={pathname.includes('/dokumen') ? "text-blue-300" : "text-blue-300"}><FileText size={20} /></div>
+                <div className={pathname.includes('/dokumen') ? "text-blue-200" : "text-blue-200"}><FileText size={20} /></div>
                 Dokumen
               </div>
-              {isDokumenOpen ? <ChevronDown size={16} className="text-blue-300" /> : <ChevronRight size={16} className="text-blue-300" />}
+              {isDokumenOpen ? <ChevronDown size={16} className="text-blue-200" /> : <ChevronRight size={16} className="text-blue-200" />}
             </button>
 
             {isDokumenOpen && (
-              <div className="ml-10 mt-1 mb-2 space-y-1 border-l border-blue-700/50 pl-2">
+              <div className="ml-10 mt-1 mb-2 space-y-1 border-l border-blue-400 pl-2">
                 {dokumenItems.map((subItem) => {
                   const isSubActive = pathname === subItem.path;
                   return (
                     <Link key={subItem.name} href={subItem.path} onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
-                      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isSubActive ? "bg-blue-800/80 text-white shadow-sm" : "text-blue-200 hover:bg-blue-800/40 hover:text-white"
+                      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors ${isSubActive ? "bg-blue-700 text-white shadow-sm" : "text-blue-100 hover:bg-blue-500/50 hover:text-white"
                         }`}>
-                        <div className={isSubActive ? "text-[#F97316]" : "text-blue-400"}>{subItem.icon}</div>
+                        <div className={isSubActive ? "text-[#F97316]" : "text-blue-300"}>{subItem.icon}</div>
                         {subItem.name}
                       </div>
                     </Link>
@@ -144,10 +143,10 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
           <div className="mt-2">
             <Link href="/investigasi" onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
               <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${pathname === '/investigasi'
-                ? "bg-blue-800/80 text-white shadow-md border-[#F97316]"
-                : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                ? "bg-blue-700 text-white shadow-md border-[#F97316]"
+                : "text-blue-50 hover:bg-blue-500/50 hover:text-white border-transparent"
                 }`}>
-                <div className={pathname === '/investigasi' ? "text-[#F97316]" : "text-blue-300"}>
+                <div className={pathname === '/investigasi' ? "text-[#F97316]" : "text-blue-200"}>
                   <SearchCheck size={20} />
                 </div>
                 Investigasi
@@ -155,7 +154,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
             </Link>
           </div>
 
-          <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mt-8 mb-3 px-3">Lainnya</div>
+          <div className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mt-8 mb-3 px-3">Lainnya</div>
 
           {bottomNavItems.map((item) => {
             const isActive = pathname === item.path;
@@ -163,30 +162,29 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
             return (
               <Link key={item.name} href={item.path} target={isExternal ? "_blank" : "_self"} onClick={() => { if (!isExternal && window.innerWidth < 1024) setIsOpen(false) }}>
                 <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${isActive
-                  ? "bg-blue-800/80 text-white shadow-md border-[#F97316]"
-                  : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                  ? "bg-blue-700 text-white shadow-md border-[#F97316]"
+                  : "text-blue-50 hover:bg-blue-500/50 hover:text-white border-transparent"
                   }`}>
-                  <div className={isActive ? "text-[#F97316]" : "text-blue-300"}>{item.icon}</div>
+                  <div className={isActive ? "text-[#F97316]" : "text-blue-200"}>{item.icon}</div>
                   {item.name}
                 </div>
               </Link>
             );
           })}
 
-          {/* 3. MENU ADMIN PANEL (Hanya Dirender Jika Role = 'admin') */}
           {profile?.role === 'admin' && (
             <>
-              <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mt-8 mb-3 px-3">Admin Panel</div>
+              <div className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mt-8 mb-3 px-3">Admin Panel</div>
 
               {adminItems.map((item) => {
                 const isActive = pathname === item.path;
                 return (
                   <Link key={item.name} href={item.path} onClick={() => { if (window.innerWidth < 1024) setIsOpen(false) }}>
                     <div className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold transition-all duration-200 border-l-4 ${isActive
-                      ? "bg-blue-800/80 text-white shadow-md border-[#F97316]"
-                      : "text-blue-100 hover:bg-blue-800/40 hover:text-white border-transparent"
+                      ? "bg-blue-700 text-white shadow-md border-[#F97316]"
+                      : "text-blue-50 hover:bg-blue-500/50 hover:text-white border-transparent"
                       }`}>
-                      <div className={isActive ? "text-[#F97316]" : "text-blue-300"}>{item.icon}</div>
+                      <div className={isActive ? "text-[#F97316]" : "text-blue-200"}>{item.icon}</div>
                       {item.name}
                     </div>
                   </Link>
