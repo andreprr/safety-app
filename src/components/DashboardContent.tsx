@@ -547,7 +547,7 @@ export default function DashboardContent() {
                     </div>
                 </Link>
                 <Link href="/temuan" className="group block">
-                    <div className="bg-red-500 p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-red-600">
+                    <div className="bg-[#0000FF] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-blue-600">
                         <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><AlertCircle size={16} /></div>
                         <div>
                             <h3 className="text-2xl font-extrabold text-white leading-none">{stats.open}</h3>
@@ -556,7 +556,7 @@ export default function DashboardContent() {
                     </div>
                 </Link>
                 <Link href="/temuan" className="group block">
-                    <div className="bg-[#F97316] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#EA580C]">
+                    <div className="bg-[#FF00FF] p-4 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-[100px] border border-[#FF00FF]">
                         <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center group-hover:scale-110 transition-transform"><Clock size={16} /></div>
                         <div>
                             <h3 className="text-2xl font-extrabold text-white leading-none">{stats.onProses}</h3>
@@ -788,8 +788,8 @@ export default function DashboardContent() {
                             <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
                             <RechartsTooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
                             <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: '15px', fontSize: '11px' }} iconType="circle" />
-                            <Bar dataKey="open" name="Open" fill="#ef4444" radius={[2, 2, 0, 0]} maxBarSize={35} />
-                            <Bar dataKey="onProses" name="Work in Progress" fill="#F97316" radius={[2, 2, 0, 0]} maxBarSize={35} />
+                            <Bar dataKey="open" name="Open" fill="#0000FF" radius={[2, 2, 0, 0]} maxBarSize={35} />
+                            <Bar dataKey="onProses" name="Work in Progress" fill="#FF00FF" radius={[2, 2, 0, 0]} maxBarSize={35} />
                             <Bar dataKey="closed" name="Close" fill="#10b981" radius={[2, 2, 0, 0]} maxBarSize={35} />
                         </BarChart>
                     </ResponsiveContainer>
