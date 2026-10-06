@@ -11,27 +11,38 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Printer, FileText, Settings, FileSpreadsheet, Search, Loader2, Trash2 } from "lucide-react";
 
+// --- FUNGSI FORMAT TANGGAL ---
+const formatDate = (dateString: string) => {
+  if (!dateString) return "-";
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
+
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}`;
+};
+
 // --- CSS KHUSUS PRINT ---
 const printStyles = `
   @media print {
-    /* 1. Paksa ukuran A4 Landscape dan hilangkan margin browser */
     @page {
       size: A4 landscape !important;
       margin: 0mm !important; 
     }
 
-    /* 2. Pindahkan margin kertas ke padding kontainer */
     .inspeksi-print-container {
       width: 100% !important;
       margin: 0 !important;
-      padding: 10mm 12mm !important; /* Jarak atas/bawah 10mm, Kiri/Kanan 12mm */
+      padding: 10mm 12mm !important; 
       background-color: #ffffff !important;
       zoom: 68% !important; 
       box-sizing: border-box !important;
     }
 
-    .no-print { display: none !important; }
-    .col-aksi { display: none !important; }
+    .no-print, .col-aksi { display: none !important; }
 
     .inspeksi-table-wrapper {
       width: 100% !important;
@@ -39,40 +50,34 @@ const printStyles = `
       box-shadow: none !important;
       padding: 0 !important;
       margin: 0 !important;
-      background-color: #ffffff !important;
     }
 
-    /* 3. TABEL UTAMA */
     .inspeksi-table {
       width: 100% !important;
       table-layout: fixed !important;
       border-collapse: collapse !important;
       border: 1px solid #000 !important;
-      background-color: #ffffff !important;
     }
 
-    /* Semua Sel Table */
     .inspeksi-table th,
     .inspeksi-table td {
       border: 1px solid #000 !important;
-      padding: 4px 3px !important;
+      padding: 4px 4px !important;
       vertical-align: top !important;
       word-wrap: break-word !important;
       overflow-wrap: break-word !important;
+      white-space: normal !important;
       font-size: 8pt !important;
-      color: #000000 !important;
-      background-color: transparent !important;
+      color: #000 !important;
+      min-width: 0 !important; 
     }
 
-    /* Baris Kop Surat di Dalam Tabel */
     th.inspeksi-kop-cell {
       padding: 0 !important;
       border-bottom: 1px solid #000 !important;
-      background-color: #ffffff !important;
       vertical-align: middle !important;
     }
 
-    /* Baris Header Kolom (Warna Biru) */
     .inspeksi-col-header th {
       background-color: #dbeafe !important;
       font-weight: bold !important;
@@ -81,23 +86,35 @@ const printStyles = `
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
+      /* PASTIKAN TABEL MENGUNCI LEBAR */
+    table.inspeksi-table {
+      table-layout: fixed !important;
+      width: 100% !important;
+    }
 
-    /* 4. LEBAR KOLOM PRESISI = 100% */
-    .col-no          { width: 3% !important; text-align: center !important; }
-    .col-no-laporan  { width: 7% !important; text-align: center !important; }
-    .col-tgl         { width: 6% !important; text-align: center !important; }
-    .col-foto        { width: 8% !important; text-align: center !important; }
-    .col-temuan      { width: 16% !important; }
-    .col-lokasi      { width: 9% !important; }
-    .col-kategori    { width: 8% !important; text-align: center !important; }
-    .col-tindakan    { width: 16% !important; }
-    .col-batas       { width: 6% !important; text-align: center !important; }
-    .col-risiko      { width: 6% !important; text-align: center !important; }
-    .col-status      { width: 5% !important; text-align: center !important; }
-    .col-jenis       { width: 6% !important; text-align: center !important; }
-    .col-pic         { width: 4% !important; text-align: center !important; }
+    /* ALOKASI TOTAL 100% PAS */
+    th.col-no, td.col-no                   { width: 3% !important; padding: 2px !important; text-align: center !important; overflow: hidden !important; }
+    th.col-no-laporan, td.col-no-laporan   { width: 8% !important; text-align: center !important; }
+    th.col-tgl, td.col-tgl                 { width: 6% !important; text-align: center !important; }
+    th.col-foto, td.col-foto               { width: 9% !important; text-align: center !important; }
+    th.col-temuan, td.col-temuan           { width: 18% !important; } /* Diperpendek dari sebelumnya 22% */
+    th.col-lokasi, td.col-lokasi           { width: 8% !important; }
+    th.col-kategori, td.col-kategori       { width: 6% !important; text-align: center !important; }
+    th.col-tindakan, td.col-tindakan       { width: 20% !important; } 
+    th.col-batas, td.col-batas             { width: 6% !important; text-align: center !important; }
+    th.col-risiko, td.col-risiko           { width: 5% !important; text-align: center !important; }
+    th.col-status, td.col-status           { width: 4% !important; text-align: center !important; }
+    th.col-jenis, td.col-jenis             { width: 5% !important; text-align: center !important; }
+    th.col-pic, td.col-pic                 { width: 2% !important; text-align: center !important; }
 
-    /* 5. PERBAIKAN LOGO & FOTO (Hanya foto temuan yang dibikin full width) */
+    .reset-print-text {
+      min-width: 0 !important;
+      max-width: none !important;
+      white-space: normal !important;
+      word-wrap: break-word !important;
+      -webkit-line-clamp: unset !important;
+    }
+
     .col-foto img {
       width: 100% !important;
       height: 45px !important;
@@ -105,17 +122,16 @@ const printStyles = `
       display: block !important;
     }
 
-    /* 6. PERBAIKAN KATEGORI & RISIKO AGAR TIDAK KELUAR GARIS */
     .badge-kategori, .badge-risiko {
       display: block !important;
       width: 100% !important;
       box-sizing: border-box !important;
       white-space: normal !important; 
-      word-wrap: break-word !important;
-      font-size: 6pt !important; /* Diperkecil agar teks panjang muat */
+      font-size: 6.5pt !important;
       line-height: 1.1 !important;
       padding: 3px 1px !important;
       text-align: center !important;
+      border: 0.5px solid #000 !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
@@ -138,7 +154,7 @@ export default function InspeksiPage() {
 
   const [headerData, setHeaderData] = useState({
     nama_perusahaan: "", nama_formulir: "", no_formulir: "", revisi: "",
-    tmt: "", halaman: "", nama_project: "", tanggal_laporan: ""
+    tmt: "", halaman: "", tanggal_laporan: ""
   });
 
   const [formData, setFormData] = useState({
@@ -265,14 +281,14 @@ export default function InspeksiPage() {
         const row = worksheet.addRow({
           no: index + 1,
           no_pelaporan: rowData.no_pelaporan || "-",
-          tanggal_temuan: rowData.tanggal_temuan || "-",
+          tanggal_temuan: formatDate(rowData.tanggal_temuan),
           foto: imgData ? "" : (rowData.foto_url ? "Foto Gagal Dimuat" : "Tanpa Foto"),
           temuan: rowData.temuan || "-",
           lokasi: rowData.lokasi || "-",
           nama_proyek: rowData.nama_proyek || "-",
           kategori: rowData.kategori || "-",
           tindakan: rowData.tindakan_penanggulangan || "-",
-          batas_waktu: rowData.cut_off_date || "-",
+          batas_waktu: formatDate(rowData.cut_off_date),
           risk_level: rowData.risk_level || "-",
           status: rowData.status || "-",
           kategori_temuan: rowData.kategori_temuan || "-",
@@ -475,7 +491,7 @@ export default function InspeksiPage() {
                 <form onSubmit={handleHeaderSubmit} className="space-y-4 mt-2">
                   <div className="grid grid-cols-2 gap-4">
                     <Input placeholder="Perusahaan" name="nama_perusahaan" value={headerData.nama_perusahaan} onChange={handleHeaderChange} className="col-span-2" />
-                    <Input placeholder="Project" name="nama_project" value={headerData.nama_project} onChange={handleHeaderChange} className="col-span-2" />
+                    {/* Input untuk nama proyek DIHAPUS dari modal Kop ini */}
                     <Input placeholder="Nama Formulir" name="nama_formulir" value={headerData.nama_formulir} onChange={handleHeaderChange} />
                     <Input placeholder="No Formulir" name="no_formulir" value={headerData.no_formulir} onChange={handleHeaderChange} />
                     <Input placeholder="Revisi" name="revisi" value={headerData.revisi} onChange={handleHeaderChange} />
@@ -591,13 +607,19 @@ export default function InspeksiPage() {
         </div>
       </div>
 
+      {/* --- LOGO KONSISTEN DI ATAS TABEL --- */}
+      <div className="hidden print:flex w-full justify-center mb-4 mt-2">
+        <img src="/konsisten.webp" alt="Logo KONSISTEN" className="h-10 object-contain" />
+      </div>
+
       <div className="inspeksi-table-wrapper w-full overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm print:rounded-none print:border-none print:shadow-none print:p-0 print:m-0 print:overflow-visible">
-        <Table className="inspeksi-table min-w-[1600px] text-sm print:text-xs bg-white">
+        <Table className="inspeksi-table min-w-[1600px] print:min-w-0 print:w-full text-sm print:text-xs bg-white">
+          {/* STRUKTUR TULANG TABEL MUTLAK KHUSUS PRINT */}
+          <colgroup className="hidden print:table-column-group"><col style={{ width: "3%" }} /><col style={{ width: "8%" }} /><col style={{ width: "6%" }} /><col style={{ width: "9%" }} /><col style={{ width: "19%" }} /><col style={{ width: "7%" }} /><col style={{ width: "6%" }} /><col style={{ width: "19%" }} /><col style={{ width: "6%" }} /><col style={{ width: "5%" }} /><col style={{ width: "4%" }} /><col style={{ width: "4%" }} /><col style={{ width: "4%" }} /></colgroup>
           <TableHeader className="bg-slate-50 print:bg-white">
 
             {/* --- KOP SURAT (DI DALAM TABEL) --- */}
             <TableRow className="hidden print:table-row bg-white">
-              {/* PERHATIAN: colSpan diatur ke 13 karena kolom Aksi (ke-14) di-hide saat diprint */}
               <TableHead colSpan={13} className="inspeksi-kop-cell font-normal text-black border-black">
                 <div className="flex w-full border-b border-black box-border bg-white">
                   <div className="w-[20%] border-r border-black p-2 flex items-center justify-center">
@@ -614,25 +636,27 @@ export default function InspeksiPage() {
                     <div className="flex justify-between"><span>HALAMAN</span><span>: {headerData.halaman}</span></div>
                   </div>
                 </div>
-                <div className="p-1.5 bg-white text-[8pt] flex justify-between">
-                  <div className="flex w-1/2"><span className="w-24 font-bold inline-block">Nama Project</span><span>: {headerData.nama_project}</span></div>
-                  <div className="flex w-1/2"><span className="w-24 font-bold inline-block">Tanggal Laporan</span><span>: {headerData.tanggal_laporan}</span></div>
+                {/* NAMA PROJECT SUDAH DIHAPUS TOTAL DARI SINI */}
+                <div className="p-1.5 bg-white text-[8pt] flex justify-end">
+                  <div className="flex">
+                    <span className="font-bold mr-2">Tanggal Laporan :</span>
+                    <span>{formatDate(headerData.tanggal_laporan)}</span>
+                  </div>
                 </div>
               </TableHead>
-              {/* Kolom Aksi yang disembunyikan agar HTML table konsisten */}
               <TableHead className="col-aksi print:hidden p-0 border-none"></TableHead>
             </TableRow>
 
             {/* --- HEADER KOLOM --- */}
             <TableRow className="text-slate-800 font-bold bg-white inspeksi-col-header">
-              <TableHead className="col-no border-b print:border print:border-black text-center w-[50px] text-black">NO</TableHead>
-              <TableHead className="col-no-laporan border-b print:border print:border-black text-center w-[120px] text-black">No. Pelaporan</TableHead>
-              <TableHead className="col-tgl border-b print:border print:border-black text-center w-[100px] text-black">Tgl Temuan</TableHead>
-              <TableHead className="col-foto border-b print:border print:border-black text-center w-[120px] text-black">Bukti Foto</TableHead>
-              <TableHead className="col-temuan border-b print:border print:border-black min-w-[250px] max-w-[350px] text-black">Temuan / Pelanggaran</TableHead>
-              <TableHead className="col-lokasi border-b print:border print:border-black w-[180px] text-black">Area / Proyek</TableHead>
+              <TableHead className="col-no border-b print:border print:border-black text-center text-black print:px-0 print:mx-0">NO</TableHead>
+              <TableHead className="col-no-laporan border-b print:border print:border-black text-center text-black">No. Pelaporan</TableHead>
+              <TableHead className="col-tgl border-b print:border print:border-black text-center text-black">Tgl Temuan</TableHead>
+              <TableHead className="col-foto border-b print:border print:border-black text-center text-black">Bukti Foto</TableHead>
+              <TableHead className="col-temuan border-b print:border print:border-black text-black">Temuan / Pelanggaran</TableHead>
+              <TableHead className="col-lokasi border-b print:border print:border-black text-black">Area / Proyek</TableHead>
               <TableHead className="col-kategori border-b print:border print:border-black text-black">Kategori</TableHead>
-              <TableHead className="col-tindakan border-b print:border print:border-black min-w-[250px] max-w-[350px] text-black">Tindakan Penanggulangan</TableHead>
+              <TableHead className="col-tindakan border-b print:border print:border-black text-black">Tindakan Penanggulangan</TableHead>
               <TableHead className="col-batas border-b print:border print:border-black text-center text-black">Batas Waktu</TableHead>
               <TableHead className="col-risiko border-b print:border print:border-black text-center text-black">Risiko</TableHead>
               <TableHead className="col-status border-b print:border print:border-black text-center text-black">Status</TableHead>
@@ -651,35 +675,60 @@ export default function InspeksiPage() {
             ) : (
               filteredData.map((row, index) => (
                 <TableRow key={row.id} className="hover:bg-slate-50/50 bg-white">
-                  <TableCell className="col-no border-b print:border print:border-black p-3 text-center align-top text-black">{index + 1}</TableCell>
-                  <TableCell className="col-no-laporan border-b print:border print:border-black p-3 text-center align-top font-medium text-black">{row.no_pelaporan || "-"}</TableCell>
-                  <TableCell className="col-tgl border-b print:border print:border-black p-3 text-center align-top text-black">{row.tanggal_temuan}</TableCell>
-                  <TableCell className="col-foto border-b print:border print:border-black p-3 text-center align-top">
-                    {row.foto_url ? (
-                      <img src={row.foto_url} alt="Bukti Temuan" className="w-full h-16 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity bg-white" onClick={() => { setSelectedImage(row.foto_url); setIsImageModalOpen(true); }} title="Klik untuk perbesar" />
-                    ) : <span className="text-xs text-slate-400 italic">Tanpa Foto</span>}
+                  <TableCell className="col-no border-b print:border print:border-black text-center align-top text-black print:px-0 print:mx-0">{index + 1}</TableCell>
+                  <TableCell className="col-no-laporan border-b print:border print:border-black p-2 text-center align-top font-medium text-black">
+                    {/* Diberi pembatas lebar (max-w) dan break-all agar teks panjang tanpa spasi dipaksa turun ke bawah */}
+                    <div className="max-w-[100px] mx-auto whitespace-normal break-all">
+                      {row.no_pelaporan || "-"}
+                    </div>
                   </TableCell>
-                  <TableCell className="col-temuan border-b print:border print:border-black p-3 text-black font-medium align-top">
-                    <div className="inspeksi-desc-text min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-4" title={row.temuan}>{row.temuan}</div>
+                  <TableCell className="col-tgl border-b print:border print:border-black p-2 text-center align-top text-black">{formatDate(row.tanggal_temuan)}</TableCell>
+                  <TableCell className="col-foto border-b print:border print:border-black p-2 text-center align-top">
+                    {/* Tambahkan print:min-w-0 dan print:w-full untuk mereset paksaan 120px di mode cetak */}
+                    <div className="min-w-[120px] print:min-w-0 print:w-full mx-auto">
+                      {row.foto_url ? (
+                        <img
+                          src={row.foto_url}
+                          alt="Bukti Temuan"
+                          className="w-full h-24 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity bg-white"
+                          onClick={() => { setSelectedImage(row.foto_url); setIsImageModalOpen(true); }}
+                          title="Klik untuk perbesar"
+                        />
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">Tanpa Foto</span>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell className="col-lokasi border-b print:border print:border-black p-3 align-top text-black">
+
+                  <TableCell className="col-temuan border-b print:border print:border-black p-2 text-black font-medium align-top">
+                    <div className="min-w-[200px] max-w-[300px] whitespace-normal break-words reset-print-text" title={row.temuan}>
+                      {row.temuan}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="col-lokasi border-b print:border print:border-black p-2 align-top text-black">
                     <div className="font-semibold">{row.lokasi}</div>
                     <div className="text-[11px] text-slate-500 mt-1 uppercase tracking-wider">{row.nama_proyek}</div>
                   </TableCell>
-                  <TableCell className="col-kategori border-b print:border print:border-black p-3 align-top text-black">
+
+                  <TableCell className="col-kategori border-b print:border print:border-black p-2 align-top text-black">
                     <span className="badge-kategori bg-slate-100 px-2 py-1 rounded text-xs font-semibold text-slate-600 uppercase border border-slate-200">{row.kategori}</span>
                   </TableCell>
-                  <TableCell className="col-tindakan border-b print:border print:border-black p-3 text-black align-top">
-                    <div className="inspeksi-desc-text min-w-[200px] max-w-[300px] whitespace-normal break-words line-clamp-4" title={row.tindakan_penanggulangan}>{row.tindakan_penanggulangan ? row.tindakan_penanggulangan : <span className="text-xs text-slate-400 italic">Belum ditindaklanjuti</span>}</div>
+
+                  <TableCell className="col-tindakan border-b print:border print:border-black p-2 text-black align-top">
+                    <div className="min-w-[200px] line-clamp-4 reset-print-text" title={row.tindakan_penanggulangan}>
+                      {row.tindakan_penanggulangan ? row.tindakan_penanggulangan : <span className="text-xs text-slate-400 italic">Belum ditindaklanjuti</span>}
+                    </div>
                   </TableCell>
-                  <TableCell className="col-batas border-b print:border print:border-black p-3 text-center text-red-600 font-medium align-top">{row.cut_off_date}</TableCell>
-                  <TableCell className="col-risiko border-b print:border print:border-black p-3 text-center font-bold align-top">
+
+                  <TableCell className="col-batas border-b print:border print:border-black p-2 text-center text-red-600 font-medium align-top">{formatDate(row.cut_off_date)}</TableCell>
+                  <TableCell className="col-risiko border-b print:border print:border-black p-2 text-center font-bold align-top">
                     <span className={`badge-risiko px-2.5 py-1 rounded-full text-xs border whitespace-nowrap ${row.risk_level === 'Tinggi' ? 'bg-red-50 text-red-700 border-red-200' : row.risk_level === 'Sedang' ? 'bg-orange-50 text-orange-700 border-orange-200' : row.risk_level === 'Rendah' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-700'}`}>{row.risk_level}</span>
                   </TableCell>
-                  <TableCell className="col-status border-b print:border print:border-black p-3 text-center font-bold align-top text-black">{row.status}</TableCell>
-                  <TableCell className="col-jenis border-b print:border print:border-black p-3 text-center align-top text-black">{row.kategori_temuan}</TableCell>
-                  <TableCell className="col-pic border-b print:border print:border-black p-3 text-center font-semibold text-black align-top">{row.pic}</TableCell>
-                  <TableCell className="col-aksi border-b print:hidden p-3 text-center align-top">
+                  <TableCell className="col-status border-b print:border print:border-black p-2 text-center font-bold align-top text-black">{row.status}</TableCell>
+                  <TableCell className="col-jenis border-b print:border print:border-black p-2 text-center align-top text-black">{row.kategori_temuan}</TableCell>
+                  <TableCell className="col-pic border-b print:border print:border-black p-2 text-center font-semibold text-black align-top">{row.pic}</TableCell>
+                  <TableCell className="col-aksi border-b print:hidden p-2 text-center align-top">
                     <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200" onClick={() => handleDelete(row.id, row.foto_url)} title="Hapus Data"><Trash2 size={16} /></Button>
                   </TableCell>
                 </TableRow>
