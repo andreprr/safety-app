@@ -7,7 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import {
   LayoutDashboard, FileSpreadsheet, ClipboardCheck, AlertOctagon, MonitorPlay,
   PanelLeftClose, PanelLeft, Globe, Leaf, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
-  SearchCheck, HeartPulse, UserPlus, UserCog
+  SearchCheck, HeartPulse, UserPlus, UserCog, TrendingUp
 } from "lucide-react";
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (val: boolean) => void }) {
@@ -25,6 +25,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsO
     { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
     { name: "Hazard Reports", path: "/temuan", icon: <AlertOctagon size={20} /> },
     { name: "Form Inspeksi", path: "/inspeksi", icon: <ClipboardCheck size={20} /> },
+    { name: "Performance K3", path: "/performance", icon: <TrendingUp size={20} /> },
     { name: "IBPR", path: "/ibppr", icon: <FileSpreadsheet size={20} /> },
     { name: "SOP & JSA", path: "/sop", icon: <FileText size={20} /> },
   ];
