@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import {
   ALL_AREAS,
@@ -8,20 +8,28 @@ import {
   TOTAL_QUESTIONS,
   evaluateQuestionAnswer,
   getScoreGrade,
-  PerformanceK3Record,
+  AnswerOption,
   PerformanceK3Detail,
   InspectionDetailItem,
   CategoryScoreSummary,
 } from "./k3Questions";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import EditPerformanceK3Modal from "./edit";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -42,34 +50,251 @@ import {
   Award,
   Layers,
   FileSpreadsheet,
-  X,
-  FileCheck,
-  ChevronDown,
   Printer,
+  MinusCircle,
+  FileText,
+  FileCheck,
   Sparkles,
+  BarChart3,
+  ArrowUpDown,
+  Briefcase,
+  Pencil,
 } from "lucide-react";
 
-// Format tanggal standar Indonesia
-const formatDate = (dateString: string) => {
+export interface PerformanceRecord {
+  id: string;
+  nama_proyek: string;
+  area: string;
+  tanggal_inspection: string;
+  detail_penilaian: any;
+  score_percentage: number;
+  created_at?: string;
+}
+
+export interface ParsedQuestionItem {
+  id: string;
+  code: string;
+  kategori: string;
+  pertanyaan: string;
+  jawaban: string;
+  temuan: string;
+  skor: number;
+  is_reverse: boolean;
+  is_negative: boolean;
+  is_na: boolean;
+}
+
+export interface ParsedCategory {
+  id: string;
+  name: string;
+  score: number;
+  relevantTotal: number;
+  naCount: number;
+  percentage: number;
+  items: ParsedQuestionItem[];
+}
+
+type SortOption =
+  | "score_desc"
+  | "score_asc"
+  | "proyek_asc"
+  | "proyek_desc"
+  | "area_asc"
+  | "area_desc"
+  | "tanggal_desc"
+  | "tanggal_asc";
+
+export const formatDate = (dateString: string) => {
   if (!dateString) return "-";
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return dateString;
   const months = [
-    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
-    "Jul", "Agt", "Sep", "Okt", "Nov", "Des"
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Mei",
+    "Jun",
+    "Jul",
+    "Agt",
+    "Sep",
+    "Okt",
+    "Nov",
+    "Des",
   ];
-  return `${String(date.getDate()).padStart(2, "0")} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  return `${String(date.getDate()).padStart(2, "0")} ${months[date.getMonth()]
+    } ${date.getFullYear()}`;
 };
+
+export const hasTemuanContent = (temuan?: string) => {
+  if (!temuan) return false;
+  const clean = temuan.trim().toLowerCase();
+  return (
+    clean !== "" &&
+    clean !== "-" &&
+    clean !== "--" &&
+    clean !== "." &&
+    clean !== "tidak ada" &&
+    clean !== "nihil"
+  );
+};
+
+// Fungsi pemersatu pembaca JSONB detail_penilaian (Diekspor agar bisa dipakai oleh edit.tsx)
+export function parseDetailPenilaianToCategories(detail: any): {
+  categories: ParsedCategory[];
+  totalSkor: number;
+  totalRelevan: number;
+  totalNA: number;
+} {
+  if (!detail) {
+    return {
+      categories: [],
+      totalSkor: 0,
+      totalRelevan: TOTAL_QUESTIONS,
+      totalNA: 0,
+    };
+  }
+
+  let parsed = detail;
+  if (typeof detail === "string") {
+    try {
+      parsed = JSON.parse(detail);
+    } catch {
+      return {
+        categories: [],
+        totalSkor: 0,
+        totalRelevan: TOTAL_QUESTIONS,
+        totalNA: 0,
+      };
+    }
+  }
+
+  let rawList: any[] = [];
+  if (Array.isArray(parsed)) {
+    rawList = parsed;
+  } else if (parsed && Array.isArray(parsed.items)) {
+    rawList = parsed.items;
+  }
+
+  if (rawList.length === 0) {
+    return {
+      categories: [],
+      totalSkor: parsed?.total_skor ?? 0,
+      totalRelevan: parsed?.total_pertanyaan ?? TOTAL_QUESTIONS,
+      totalNA: parsed?.total_tidak_relevan ?? 0,
+    };
+  }
+
+  const hasCategoryOrCode = rawList.some((it) => it.kategori || it.code);
+  let currentIndex = 0;
+  let globalScore = 0;
+  let globalRelevan = 0;
+  let globalNA = 0;
+
+  const categories: ParsedCategory[] = QUESTION_CATEGORIES.map((catDef) => {
+    let catRawItems: any[] = [];
+
+    if (hasCategoryOrCode) {
+      catRawItems = rawList.filter((it) => {
+        const codeMatch =
+          it.code &&
+          it.code.toUpperCase().startsWith(catDef.id.toUpperCase() + ".");
+        const katMatch =
+          it.kategori &&
+          it.kategori.toLowerCase().includes(catDef.name.toLowerCase());
+        return codeMatch || katMatch;
+      });
+    } else {
+      catRawItems = rawList.slice(
+        currentIndex,
+        currentIndex + catDef.questions.length
+      );
+      currentIndex += catDef.questions.length;
+    }
+
+    let catScore = 0;
+    let catRelevan = 0;
+    let catNA = 0;
+
+    const items: ParsedQuestionItem[] = catDef.questions.map((qDef, idx) => {
+      const rawItem =
+        catRawItems.find(
+          (r) =>
+            r.id === qDef.id ||
+            (r.code && r.code.toUpperCase() === qDef.code.toUpperCase())
+        ) ||
+        catRawItems[idx] ||
+        {};
+
+      const rawJawaban = (rawItem.jawaban || "-").trim();
+      const evalRes = evaluateQuestionAnswer(
+        qDef,
+        rawJawaban === "-" ? "" : rawJawaban
+      );
+
+      if (evalRes.isNA) {
+        catNA++;
+        globalNA++;
+      } else {
+        catRelevan++;
+        globalRelevan++;
+        catScore += evalRes.score;
+        globalScore += evalRes.score;
+      }
+
+      return {
+        id: qDef.id,
+        code: qDef.code,
+        kategori: catDef.name,
+        pertanyaan: rawItem.pertanyaan || rawItem.text || qDef.text,
+        jawaban: evalRes.isNA ? "Tidak Relevan" : rawJawaban || "-",
+        temuan: rawItem.temuan || "",
+        skor: evalRes.score,
+        is_reverse: !!qDef.isReverse,
+        is_negative: evalRes.isNegative,
+        is_na: evalRes.isNA,
+      };
+    });
+
+    const percentage =
+      catRelevan > 0
+        ? parseFloat(((catScore / catRelevan) * 100).toFixed(1))
+        : 100;
+
+    return {
+      id: catDef.id,
+      name: catDef.name,
+      score: catScore,
+      relevantTotal: catRelevan,
+      naCount: catNA,
+      percentage,
+      items,
+    };
+  });
+
+  return {
+    categories,
+    totalSkor: parsed?.total_skor ?? globalScore,
+    totalRelevan: parsed?.total_pertanyaan ?? (globalRelevan || TOTAL_QUESTIONS),
+    totalNA: parsed?.total_tidak_relevan ?? globalNA,
+  };
+}
 
 export default function PerformanceK3Page() {
   // State data utama
-  const [records, setRecords] = useState<PerformanceK3Record[]>([]);
+  const [records, setRecords] = useState<PerformanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Filter & Search
+  // Filter, Search & Sort
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAreaFilter, setSelectedAreaFilter] = useState("Semua Area");
+  const [sortBy, setSortBy] = useState<SortOption>("score_desc");
+
+  // Mode Grafik Tren: "area" | "proyek"
+  const [chartGroupMode, setChartGroupMode] = useState<"area" | "proyek">(
+    "area"
+  );
 
   // Modal Tambah Penilaian
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -84,22 +309,31 @@ export default function PerformanceK3Page() {
     tanggal_inspection: new Date().toISOString().split("T")[0],
   });
 
-  // Form State Kuesioner: { [questionId]: { jawaban: "Ya"|"Tidak"|"", temuan: "" } }
+  // Form State Kuesioner
   const [answers, setAnswers] = useState<
-    Record<string, { jawaban: "Ya" | "Tidak" | ""; temuan: string }>
+    Record<string, { jawaban: AnswerOption; temuan: string }>
   >({});
 
   // Modal Detail Penilaian
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<PerformanceK3Record | null>(null);
-  const [detailFilterOnlyNegative, setDetailFilterOnlyNegative] = useState(false);
+  const [selectedRecord, setSelectedRecord] =
+    useState<PerformanceRecord | null>(null);
+  const [activeCategoryFilter, setActiveCategoryFilter] =
+    useState<string>("ALL");
+  const [filterOnlyWithTemuan, setFilterOnlyWithTemuan] = useState(false);
+
+  // Modal Edit Penilaian (Terhubung ke edit.tsx)
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [recordToEdit, setRecordToEdit] = useState<PerformanceRecord | null>(
+    null
+  );
 
   // Modal Hapus Konfirmasi
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [recordToDelete, setRecordToDelete] = useState<PerformanceK3Record | null>(null);
+  const [recordToDelete, setRecordToDelete] =
+    useState<PerformanceRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Inisialisasi awal kuesioner kosong
   const resetForm = () => {
     setFormData({
       nama_proyek: "",
@@ -108,7 +342,7 @@ export default function PerformanceK3Page() {
     });
     const initialAnswers: Record<
       string,
-      { jawaban: "Ya" | "Tidak" | ""; temuan: string }
+      { jawaban: AnswerOption; temuan: string }
     > = {};
     QUESTION_CATEGORIES.forEach((cat) => {
       cat.questions.forEach((q) => {
@@ -120,17 +354,25 @@ export default function PerformanceK3Page() {
     setActiveCategoryTab("A");
   };
 
-  // Muat data dari Supabase
   const fetchRecords = async () => {
     try {
       setRefreshing(true);
       const { data, error } = await supabase
         .from("performance_k3")
-        .select("*")
+        .select(
+          "id, nama_proyek, area, tanggal_inspection, score_percentage, detail_penilaian, created_at"
+        )
         .order("tanggal_inspection", { ascending: false });
 
       if (error) throw error;
-      setRecords((data as PerformanceK3Record[]) || []);
+      const list = (data as PerformanceRecord[]) || [];
+      setRecords(list);
+
+      // Jika modal detail sedang terbuka, ikut perbarui datanya
+      if (selectedRecord) {
+        const updated = list.find((item) => item.id === selectedRecord.id);
+        if (updated) setSelectedRecord(updated);
+      }
     } catch (err: any) {
       console.error("Gagal mengambil data performance_k3:", err.message);
     } finally {
@@ -142,45 +384,85 @@ export default function PerformanceK3Page() {
   useEffect(() => {
     fetchRecords();
     resetForm();
+
+    const channel = supabase
+      .channel("performance_k3_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "performance_k3" },
+        () => fetchRecords()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // Hitung live score saat modal form sedang diisi
+  // Live score untuk modal Tambah Penilaian
   const liveScoreData = useMemo(() => {
     let totalScore = 0;
     let answeredCount = 0;
+    let naCount = 0;
     const categoryProgress: Record<
       string,
-      { answered: number; total: number; score: number }
+      {
+        answered: number;
+        total: number;
+        relevantTotal: number;
+        na: number;
+        score: number;
+      }
     > = {};
 
     QUESTION_CATEGORIES.forEach((cat) => {
-      categoryProgress[cat.id] = { answered: 0, total: cat.questions.length, score: 0 };
+      categoryProgress[cat.id] = {
+        answered: 0,
+        total: cat.questions.length,
+        relevantTotal: cat.questions.length,
+        na: 0,
+        score: 0,
+      };
       cat.questions.forEach((q) => {
-        const itemAns = answers[q.id]?.jawaban;
-        if (itemAns === "Ya" || itemAns === "Tidak") {
+        const itemAns = answers[q.id]?.jawaban || "";
+        if (
+          itemAns === "Ya" ||
+          itemAns === "Tidak" ||
+          itemAns === "Tidak Relevan"
+        ) {
           answeredCount++;
           categoryProgress[cat.id].answered++;
           const evaluation = evaluateQuestionAnswer(q, itemAns);
-          totalScore += evaluation.score;
-          categoryProgress[cat.id].score += evaluation.score;
+          if (evaluation.isNA) {
+            naCount++;
+            categoryProgress[cat.id].na++;
+            categoryProgress[cat.id].relevantTotal--;
+          } else {
+            totalScore += evaluation.score;
+            categoryProgress[cat.id].score += evaluation.score;
+          }
         }
       });
     });
 
+    const effectiveTotalQuestions = Math.max(0, TOTAL_QUESTIONS - naCount);
     const percentage =
-      TOTAL_QUESTIONS > 0 ? parseFloat(((totalScore / TOTAL_QUESTIONS) * 100).toFixed(2)) : 0;
+      effectiveTotalQuestions > 0
+        ? parseFloat(((totalScore / effectiveTotalQuestions) * 100).toFixed(2))
+        : 0;
 
     return {
       totalScore,
       totalQuestions: TOTAL_QUESTIONS,
+      effectiveTotalQuestions,
+      naCount,
       answeredCount,
       percentage,
       categoryProgress,
     };
   }, [answers]);
 
-  // Handler ubah jawaban per pertanyaan
-  const handleAnswerChange = (questionId: string, value: "Ya" | "Tidak") => {
+  const handleAnswerChange = (questionId: string, value: AnswerOption) => {
     setAnswers((prev) => ({
       ...prev,
       [questionId]: {
@@ -190,7 +472,6 @@ export default function PerformanceK3Page() {
     }));
   };
 
-  // Handler ubah teks temuan per pertanyaan
   const handleTemuanChange = (questionId: string, text: string) => {
     setAnswers((prev) => ({
       ...prev,
@@ -201,16 +482,14 @@ export default function PerformanceK3Page() {
     }));
   };
 
-  // Helper: Isi cepat semua jawaban positif (Standar Kepatuhan K3)
   const handleFillStandardPositive = () => {
     const updatedAnswers: Record<
       string,
-      { jawaban: "Ya" | "Tidak" | ""; temuan: string }
+      { jawaban: AnswerOption; temuan: string }
     > = {};
     QUESTION_CATEGORIES.forEach((cat) => {
       cat.questions.forEach((q) => {
-        // Untuk C.1 & C.2 ("Unsafe Action & Unsafe Condition"), jawaban positif adalah "Tidak"
-        const positiveVal: "Ya" | "Tidak" = q.isReverse ? "Tidak" : "Ya";
+        const positiveVal: AnswerOption = q.isReverse ? "Tidak" : "Ya";
         updatedAnswers[q.id] = {
           jawaban: positiveVal,
           temuan: answers[q.id]?.temuan || "",
@@ -221,7 +500,6 @@ export default function PerformanceK3Page() {
     setFormErrors([]);
   };
 
-  // Validasi dan Submit Form
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: string[] = [];
@@ -236,16 +514,16 @@ export default function PerformanceK3Page() {
       errors.push("Tanggal Safety Inspection wajib ditentukan.");
     }
 
-    // Cek kelengkapan setiap kuesioner dan temuan yang required
     const unansweredList: string[] = [];
     const missingTemuanList: string[] = [];
-
     const detailItems: InspectionDetailItem[] = [];
     const categoryScores: Record<string, CategoryScoreSummary> = {};
     let totalScoreCalculated = 0;
+    let totalNACalculated = 0;
 
     QUESTION_CATEGORIES.forEach((cat) => {
       let catScore = 0;
+      let catNA = 0;
       cat.questions.forEach((q) => {
         const itemState = answers[q.id];
         const val = itemState?.jawaban || "";
@@ -255,10 +533,14 @@ export default function PerformanceK3Page() {
           unansweredList.push(`${q.code} (${cat.name})`);
         } else {
           const evalRes = evaluateQuestionAnswer(q, val);
-          catScore += evalRes.score;
-          totalScoreCalculated += evalRes.score;
+          if (evalRes.isNA) {
+            catNA++;
+            totalNACalculated++;
+          } else {
+            catScore += evalRes.score;
+            totalScoreCalculated += evalRes.score;
+          }
 
-          // ATURAN REQUIRED: Jika bernilai negatif, kolom Temuan wajib diisi!
           if (evalRes.isNegative && !temuanText) {
             missingTemuanList.push(`${q.code}: ${q.text}`);
           }
@@ -272,34 +554,53 @@ export default function PerformanceK3Page() {
             skor: evalRes.score,
             is_reverse: !!q.isReverse,
             is_negative: evalRes.isNegative,
+            is_na: evalRes.isNA,
             temuan: temuanText,
           });
         }
       });
 
+      const catRelevantTotal = Math.max(0, cat.questions.length - catNA);
       categoryScores[cat.id] = {
         name: cat.name,
         score: catScore,
-        total: cat.questions.length,
-        percentage: parseFloat(((catScore / cat.questions.length) * 100).toFixed(1)),
+        total: catRelevantTotal,
+        raw_total: cat.questions.length,
+        na_count: catNA,
+        percentage:
+          catRelevantTotal > 0
+            ? parseFloat(((catScore / catRelevantTotal) * 100).toFixed(1))
+            : 100,
       };
     });
 
+    const effectiveTotalQuestions = Math.max(
+      0,
+      TOTAL_QUESTIONS - totalNACalculated
+    );
+
+    if (effectiveTotalQuestions === 0) {
+      errors.push("Seluruh pertanyaan tidak boleh dijawab Tidak Relevan semua.");
+    }
+
     if (unansweredList.length > 0) {
       errors.push(
-        `Terdapat ${unansweredList.length} pertanyaan yang belum dijawab: ${unansweredList.slice(0, 3).join(", ")}${unansweredList.length > 3 ? "..." : ""}`
+        `Terdapat ${unansweredList.length} pertanyaan yang belum dijawab: ${unansweredList
+          .slice(0, 3)
+          .join(", ")}${unansweredList.length > 3 ? "..." : ""}`
       );
     }
 
     if (missingTemuanList.length > 0) {
       errors.push(
-        `Temuan wajib diisi untuk setiap jawaban bernilai negatif! Kurang diisi pada: ${missingTemuanList.slice(0, 3).join(", ")}${missingTemuanList.length > 3 ? "..." : ""}`
+        `Temuan wajib diisi untuk setiap jawaban bernilai negatif! Kurang diisi pada: ${missingTemuanList
+          .slice(0, 3)
+          .join(", ")}${missingTemuanList.length > 3 ? "..." : ""}`
       );
     }
 
     if (errors.length > 0) {
       setFormErrors(errors);
-      // Scroll ke bagian atas modal form untuk melihat alert error
       const modalEl = document.getElementById("k3-modal-content");
       if (modalEl) modalEl.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -309,20 +610,21 @@ export default function PerformanceK3Page() {
     setIsSubmitting(true);
 
     try {
-      // Kalkulasi rumus: (Total Skor Diperoleh / Total Seluruh Pertanyaan) * 100
       const finalScorePercentage = parseFloat(
-        ((totalScoreCalculated / TOTAL_QUESTIONS) * 100).toFixed(2)
+        ((totalScoreCalculated / effectiveTotalQuestions) * 100).toFixed(2)
       );
 
       const detailPenilaianPayload: PerformanceK3Detail = {
-        total_pertanyaan: TOTAL_QUESTIONS,
+        total_pertanyaan: effectiveTotalQuestions,
+        total_pertanyaan_awal: TOTAL_QUESTIONS,
+        total_tidak_relevan: totalNACalculated,
         total_skor: totalScoreCalculated,
         score_percentage: finalScorePercentage,
         category_scores: categoryScores,
         items: detailItems,
       };
 
-      const { data: insertedData, error } = await supabase
+      const { error } = await supabase
         .from("performance_k3")
         .insert([
           {
@@ -337,10 +639,7 @@ export default function PerformanceK3Page() {
 
       if (error) throw error;
 
-      // Refresh tabel data
       await fetchRecords();
-
-      // Tutup modal dan reset
       setIsFormOpen(false);
       resetForm();
     } catch (err: any) {
@@ -351,7 +650,120 @@ export default function PerformanceK3Page() {
     }
   };
 
-  // Handler Hapus Record
+  // Filter & Sortir data
+  const filteredAndSortedRecords = useMemo(() => {
+    const filtered = records.filter((r) => {
+      const matchesSearch =
+        (r.nama_proyek || "")
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        (r.area || "").toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesArea =
+        selectedAreaFilter === "Semua Area" || r.area === selectedAreaFilter;
+      return matchesSearch && matchesArea;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const scoreA = Number(a.score_percentage) || 0;
+      const scoreB = Number(b.score_percentage) || 0;
+
+      switch (sortBy) {
+        case "score_desc":
+          return scoreB - scoreA;
+        case "score_asc":
+          return scoreA - scoreB;
+        case "proyek_asc":
+          return (a.nama_proyek || "").localeCompare(b.nama_proyek || "", "id");
+        case "proyek_desc":
+          return (b.nama_proyek || "").localeCompare(a.nama_proyek || "", "id");
+        case "area_asc":
+          return (a.area || "").localeCompare(b.area || "", "id");
+        case "area_desc":
+          return (b.area || "").localeCompare(a.area || "", "id");
+        case "tanggal_asc":
+          return (
+            new Date(a.tanggal_inspection).getTime() -
+            new Date(b.tanggal_inspection).getTime()
+          );
+        case "tanggal_desc":
+        default:
+          return (
+            new Date(b.tanggal_inspection).getTime() -
+            new Date(a.tanggal_inspection).getTime()
+          );
+      }
+    });
+  }, [records, searchQuery, selectedAreaFilter, sortBy]);
+
+  // Statistik Ringkasan
+  const summaryStats = useMemo(() => {
+    if (records.length === 0) {
+      return {
+        totalInspeksi: 0,
+        avgScore: "0.0",
+        activeProjectsCount: 0,
+        needsAttention: 0,
+      };
+    }
+    const totalInspeksi = records.length;
+    const sumScores = records.reduce(
+      (acc, curr) => acc + (Number(curr.score_percentage) || 0),
+      0
+    );
+    const avgScore = (sumScores / totalInspeksi).toFixed(1);
+
+    const uniqueProjects = new Set(
+      records.map((r) => (r.nama_proyek || "").trim().toLowerCase())
+    );
+    const activeProjectsCount = uniqueProjects.size;
+
+    const needsAttention = records.filter(
+      (r) => (Number(r.score_percentage) || 0) < 70
+    ).length;
+
+    return {
+      totalInspeksi,
+      avgScore,
+      activeProjectsCount,
+      needsAttention,
+    };
+  }, [records]);
+
+  // Data Grafik Tren Rata-Rata Skor Berdasarkan Area / Proyek
+  const chartData = useMemo(() => {
+    if (records.length === 0) return [];
+
+    const grouped: Record<
+      string,
+      { label: string; totalScore: number; count: number }
+    > = {};
+
+    records.forEach((r) => {
+      const key =
+        chartGroupMode === "area"
+          ? r.area || "Tanpa Area"
+          : (r.nama_proyek || "Proyek").trim();
+      if (!grouped[key]) {
+        grouped[key] = { label: key, totalScore: 0, count: 0 };
+      }
+      grouped[key].totalScore += Number(r.score_percentage) || 0;
+      grouped[key].count += 1;
+    });
+
+    return Object.values(grouped)
+      .map((item) => ({
+        label: item.label,
+        count: item.count,
+        avgScore: parseFloat((item.totalScore / item.count).toFixed(1)),
+      }))
+      .sort((a, b) => b.avgScore - a.avgScore);
+  }, [records, chartGroupMode]);
+
+  const selectedRecordParsed = useMemo(() => {
+    if (!selectedRecord) return null;
+    return parseDetailPenilaianToCategories(selectedRecord.detail_penilaian);
+  }, [selectedRecord]);
+
   const handleDeleteRecord = async () => {
     if (!recordToDelete) return;
     setIsDeleting(true);
@@ -373,31 +785,446 @@ export default function PerformanceK3Page() {
     }
   };
 
-  // Filter data tabel
-  const filteredRecords = useMemo(() => {
-    return records.filter((r) => {
-      const matchesSearch =
-        r.nama_proyek.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.area.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesArea =
-        selectedAreaFilter === "Semua Area" || r.area === selectedAreaFilter;
-      return matchesSearch && matchesArea;
-    });
-  }, [records, searchQuery, selectedAreaFilter]);
-
-  // Statistik ringkasan
-  const summaryStats = useMemo(() => {
-    if (records.length === 0) {
-      return { total: 0, avgScore: 0, highestScore: 0, needsAttention: 0 };
+  // ===========================================================================
+  // FUNGSI DOWNLOAD LAPORAN GLOBAL & PER PROYEK (DIAKSES DARI MODAL DETAIL)
+  // ===========================================================================
+  const handleDownloadGlobalExcel = () => {
+    if (filteredAndSortedRecords.length === 0) {
+      alert("Tidak ada data untuk diunduh.");
+      return;
     }
-    const total = records.length;
-    const sumScores = records.reduce((acc, curr) => acc + (Number(curr.score_percentage) || 0), 0);
-    const avgScore = (sumScores / total).toFixed(1);
-    const highestScore = Math.max(...records.map((r) => Number(r.score_percentage) || 0)).toFixed(1);
-    const needsAttention = records.filter((r) => (Number(r.score_percentage) || 0) < 70).length;
 
-    return { total, avgScore, highestScore, needsAttention };
-  }, [records]);
+    const sortLabelMap: Record<SortOption, string> = {
+      score_desc: "Peringkat Skor (Tertinggi ke Terendah)",
+      score_asc: "Peringkat Skor (Terendah ke Tertinggi)",
+      proyek_asc: "Abjad Nama Proyek (A - Z)",
+      proyek_desc: "Abjad Nama Proyek (Z - A)",
+      area_asc: "Abjad Area (A - Z)",
+      area_desc: "Abjad Area (Z - A)",
+      tanggal_desc: "Tanggal Inspeksi (Terbaru)",
+      tanggal_asc: "Tanggal Inspeksi (Terlama)",
+    };
+
+    const rowsHtml = filteredAndSortedRecords
+      .map((r, i) => {
+        const score = Number(r.score_percentage) || 0;
+        const grade = getScoreGrade(score);
+        const parsedInfo = parseDetailPenilaianToCategories(r.detail_penilaian);
+
+        return `
+          <tr>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px;">${i + 1}</td>
+            <td style="border:1px solid #cbd5e1; padding:8px; font-weight:bold;">${r.nama_proyek}</td>
+            <td style="border:1px solid #cbd5e1; padding:8px;">${r.area}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px;">${formatDate(r.tanggal_inspection)}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px;">${parsedInfo.totalSkor} / ${parsedInfo.totalRelevan}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px;">${parsedInfo.totalNA}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px; font-weight:bold;">${score.toFixed(2)}%</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:8px; background-color:${grade.hexBg}; color:${grade.hexText}; font-weight:bold;">${grade.grade}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const excelHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="UTF-8" /></head>
+      <body style="font-family: Arial, sans-serif; font-size: 11pt;">
+        <table style="border-collapse: collapse; width: 100%;">
+          <tr>
+            <td colspan="8" style="font-size:16pt; font-weight:bold; background-color:#1e3a8a; color:#ffffff; padding:12px; text-align:center;">
+              LAPORAN REKAPITULASI GLOBAL PERFORMANCE K3 - KAI PROPERTI
+            </td>
+          </tr>
+          <tr>
+            <td colspan="8" style="background-color:#f1f5f9; padding:8px; font-size:10pt; border:1px solid #cbd5e1;">
+              <b>Filter Area:</b> ${selectedAreaFilter} | <b>Urutan Sortir:</b> ${sortLabelMap[sortBy]} | <b>Total Data:</b> ${filteredAndSortedRecords.length} Inspeksi | <b>Rata-rata Skor Global:</b> ${summaryStats.avgScore}%
+            </td>
+          </tr>
+          <tr><td colspan="8"></td></tr>
+          <thead>
+            <tr style="background-color:#1e40af; color:#ffffff; font-weight:bold; text-align:center;">
+              <th style="border:1px solid #cbd5e1; padding:10px; width:45px;">No</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:280px;">Nama Proyek</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:160px;">Area</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:130px;">Tanggal Inspeksi</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:120px;">Skor / Pembagi</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:100px;">Jml N/A</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:130px;">Persentase (%)</th>
+              <th style="border:1px solid #cbd5e1; padding:10px; width:150px;">Predikat K3</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([excelHtml], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Rekap_Global_Performance_K3_${new Date().toISOString().split("T")[0]
+      }.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadGlobalPDF = () => {
+    if (filteredAndSortedRecords.length === 0) {
+      alert("Tidak ada data untuk dicetak.");
+      return;
+    }
+
+    const rowsHtml = filteredAndSortedRecords
+      .map((r, i) => {
+        const score = Number(r.score_percentage) || 0;
+        const grade = getScoreGrade(score);
+        const parsedInfo = parseDetailPenilaianToCategories(r.detail_penilaian);
+
+        return `
+          <tr>
+            <td style="text-align:center;">${i + 1}</td>
+            <td style="font-weight:700;">${r.nama_proyek}</td>
+            <td>${r.area}</td>
+            <td style="text-align:center;">${formatDate(r.tanggal_inspection)}</td>
+            <td style="text-align:center;">${parsedInfo.totalSkor} / ${parsedInfo.totalRelevan} (${parsedInfo.totalNA} N/A)</td>
+            <td style="text-align:center; font-weight:800;">${score.toFixed(2)}%</td>
+            <td style="text-align:center;">
+              <span style="background:${grade.hexBg}; color:${grade.hexText}; padding:3px 8px; border-radius:12px; font-weight:700; font-size:10px;">
+                ${grade.grade}
+              </span>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const printWindow = window.open("", "_blank", "width=1024,height=768");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Rekapitulasi Global Performance K3</title>
+        <style>
+          @page { size: A4 landscape; margin: 14mm; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; font-size: 11px; }
+          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1d4ed8; padding-bottom: 12px; margin-bottom: 16px; }
+          .title { font-size: 18px; font-weight: 800; color: #1e3a8a; margin: 0; }
+          .subtitle { font-size: 11px; color: #475569; margin-top: 4px; }
+          .summary-bar { display: flex; gap: 16px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+          .summary-item { font-size: 11px; }
+          .summary-item b { color: #0f172a; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #1e3a8a; color: white; font-size: 11px; text-transform: uppercase; padding: 9px 8px; border: 1px solid #cbd5e1; }
+          td { padding: 8px; border: 1px solid #cbd5e1; font-size: 11px; }
+          tr:nth-child(even) { background: #f8fafc; }
+          .footer { margin-top: 24px; font-size: 10px; color: #64748b; text-align: right; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1 class="title">REKAPITULASI GLOBAL PERFORMANCE K3</h1>
+            <div class="subtitle">KAI Properti Safety Audit System — Ringkasan Kepatuhan Proyek</div>
+          </div>
+          <div style="text-align:right; font-size:11px;">
+            <div><b>Tanggal Cetak:</b> ${formatDate(new Date().toISOString())}</div>
+            <div><b>Filter Area:</b> ${selectedAreaFilter}</div>
+          </div>
+        </div>
+        <div class="summary-bar">
+          <div class="summary-item">Total Inspeksi Ditampilkan: <b>${filteredAndSortedRecords.length}</b></div>
+          <div class="summary-item">Proyek Aktif Dinilai: <b>${summaryStats.activeProjectsCount} Proyek</b></div>
+          <div class="summary-item">Rata-rata Skor Nasional: <b>${summaryStats.avgScore}%</b></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:35px;">No</th>
+              <th>Nama Proyek</th>
+              <th style="width:140px;">Area</th>
+              <th style="width:110px;">Tanggal Inspeksi</th>
+              <th style="width:130px;">Skor / Relevan</th>
+              <th style="width:100px;">Nilai Akhir (%)</th>
+              <th style="width:120px;">Predikat</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">Dicetak otomatis melalui Sistem Audit Performance K3 KAI Properti</div>
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleDownloadProjectExcel = (record: PerformanceRecord) => {
+    const score = Number(record.score_percentage) || 0;
+    const grade = getScoreGrade(score);
+    const parsedInfo = parseDetailPenilaianToCategories(
+      record.detail_penilaian
+    );
+
+    let bodyRows = "";
+    parsedInfo.categories.forEach((cat) => {
+      bodyRows += `
+        <tr style="background-color:#dbeafe; font-weight:bold;">
+          <td colspan="6" style="border:1px solid #94a3b8; padding:8px; color:#1e3a8a;">
+            KATEGORI ${cat.id}: ${cat.name} (Skor Kategori: ${cat.score}/${cat.relevantTotal} — ${cat.percentage}%)
+          </td>
+        </tr>
+      `;
+
+      cat.items.forEach((item) => {
+        const isNA = item.is_na;
+        const isNeg = item.is_negative;
+        const skorText = isNA ? "N/A" : String(item.skor);
+        const statusBg = isNA
+          ? "#f1f5f9"
+          : isNeg
+            ? "#ffe4e6"
+            : "#dcfce7";
+        const statusColor = isNA
+          ? "#475569"
+          : isNeg
+            ? "#be123c"
+            : "#15803d";
+
+        bodyRows += `
+          <tr>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:7px; font-weight:bold;">${item.code}</td>
+            <td style="border:1px solid #cbd5e1; padding:7px;">${item.pertanyaan}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:7px; font-weight:bold; background-color:${statusBg}; color:${statusColor};">${item.jawaban}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:7px; font-weight:bold;">${skorText}</td>
+            <td style="text-align:center; border:1px solid #cbd5e1; padding:7px;">${isNA
+            ? "Tidak Relevan"
+            : isNeg
+              ? "Temuan Negatif"
+              : "Sesuai Standar"
+          }</td>
+            <td style="border:1px solid #cbd5e1; padding:7px;">${hasTemuanContent(item.temuan) ? item.temuan : "-"
+          }</td>
+          </tr>
+        `;
+      });
+    });
+
+    const excelHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="UTF-8" /></head>
+      <body style="font-family: Arial, sans-serif; font-size: 10.5pt;">
+        <table style="border-collapse: collapse; width: 100%;">
+          <tr>
+            <td colspan="6" style="font-size:15pt; font-weight:bold; background-color:#0f172a; color:#ffffff; padding:12px; text-align:center;">
+              LEMBAR AUDIT RESMI PENILAIAN PERFORMANCE K3 PROYEK
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:#f8fafc;"><b>Nama Proyek:</b> ${record.nama_proyek}</td>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:#f8fafc;"><b>Area Proyek:</b> ${record.area}</td>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:#f8fafc;"><b>Tanggal Inspeksi:</b> ${formatDate(record.tanggal_inspection)}</td>
+          </tr>
+          <tr>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:#f8fafc;"><b>Skor Diperoleh:</b> ${parsedInfo.totalSkor} dari ${parsedInfo.totalRelevan} Parameter Relevan</td>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:#f8fafc;"><b>Parameter Tidak Relevan (N/A):</b> ${parsedInfo.totalNA} Parameter</td>
+            <td colspan="2" style="border:1px solid #cbd5e1; padding:8px; background-color:${grade.hexBg}; color:${grade.hexText}; font-weight:bold;">
+              <b>Skor Akhir:</b> ${score.toFixed(2)}% (${grade.grade})
+            </td>
+          </tr>
+          <tr><td colspan="6"></td></tr>
+          <thead>
+            <tr style="background-color:#1e3a8a; color:#ffffff; font-weight:bold; text-align:center;">
+              <th style="border:1px solid #cbd5e1; padding:9px; width:65px;">Kode</th>
+              <th style="border:1px solid #cbd5e1; padding:9px; width:360px;">Parameter Pemeriksaan K3</th>
+              <th style="border:1px solid #cbd5e1; padding:9px; width:120px;">Jawaban</th>
+              <th style="border:1px solid #cbd5e1; padding:9px; width:75px;">Skor</th>
+              <th style="border:1px solid #cbd5e1; padding:9px; width:130px;">Status Evaluasi</th>
+              <th style="border:1px solid #cbd5e1; padding:9px; width:280px;">Catatan Temuan Lapangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const safeName = (record.nama_proyek || "Proyek").replace(
+      /[^a-zA-Z0-9]/g,
+      "_"
+    );
+    const blob = new Blob([excelHtml], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Audit_K3_${safeName}_${record.tanggal_inspection}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadProjectPDF = (record: PerformanceRecord) => {
+    const score = Number(record.score_percentage) || 0;
+    const grade = getScoreGrade(score);
+    const parsedInfo = parseDetailPenilaianToCategories(
+      record.detail_penilaian
+    );
+
+    let sectionsHtml = "";
+    parsedInfo.categories.forEach((cat) => {
+      let rows = "";
+
+      cat.items.forEach((item) => {
+        const isNA = item.is_na;
+        const isNeg = item.is_negative;
+        const badgeStyle = isNA
+          ? "background:#f1f5f9; color:#475569;"
+          : isNeg
+            ? "background:#ffe4e6; color:#be123c;"
+            : "background:#dcfce7; color:#15803d;";
+
+        rows += `
+          <tr>
+            <td style="text-align:center; font-weight:700;">${item.code}</td>
+            <td>${item.pertanyaan}</td>
+            <td style="text-align:center;"><span style="padding:2px 7px; border-radius:6px; font-weight:700; font-size:10px; ${badgeStyle}">${item.jawaban}</span></td>
+            <td style="text-align:center; font-weight:700;">${isNA ? "N/A" : item.skor}</td>
+            <td>${hasTemuanContent(item.temuan) ? `<i>"${item.temuan}"</i>` : "-"}</td>
+          </tr>
+        `;
+      });
+
+      sectionsHtml += `
+        <tr style="background:#eff6ff;">
+          <td colspan="5" style="font-weight:800; color:#1e3a8a; padding:7px 8px;">
+            KATEGORI ${cat.id}: ${cat.name}
+            <span style="float:right; font-size:10px;">Skor Kategori: ${cat.score}/${cat.relevantTotal} (${cat.percentage}%)</span>
+          </td>
+        </tr>
+        ${rows}
+      `;
+    });
+
+    const printWindow = window.open("", "_blank", "width=1024,height=850");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Audit Performance K3 - ${record.nama_proyek}</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; font-size: 10.5px; }
+          .audit-header { border: 2px solid #0f172a; padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+          .audit-title { font-size: 15px; font-weight: 900; color: #0f172a; margin: 0; letter-spacing: 0.3px; }
+          .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; }
+          .meta-box { font-size: 10.5px; }
+          .meta-label { color: #64748b; font-size: 9.5px; text-transform: uppercase; font-weight: 700; }
+          .meta-val { font-weight: 800; color: #0f172a; margin-top: 2px; font-size: 11.5px; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #0f172a; color: white; font-size: 10px; text-transform: uppercase; padding: 7px 6px; border: 1px solid #94a3b8; }
+          td { padding: 6px; border: 1px solid #cbd5e1; vertical-align: top; }
+          .sign-area { margin-top: 28px; display: flex; justify-content: space-between; page-break-inside: avoid; }
+          .sign-box { width: 200px; text-align: center; font-size: 10.5px; }
+          .sign-line { margin-top: 55px; border-top: 1px solid #334155; padding-top: 4px; font-weight: 700; }
+        </style>
+      </head>
+      <body>
+        <div class="audit-header">
+          <div>
+            <div style="font-size:10px; font-weight:800; color:#2563eb; text-transform:uppercase;">KAI Properti — Dokumen Audit Resmi K3</div>
+            <h1 class="audit-title">LAPORAN RINCIAN SAFETY INSPECTION & PERFORMANCE K3</h1>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:20px; font-weight:900; color:${grade.hexText};">${score.toFixed(2)}%</div>
+            <span style="background:${grade.hexBg}; color:${grade.hexText}; padding:2px 8px; border-radius:10px; font-weight:800; font-size:10px;">
+              ${grade.grade}
+            </span>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-box">
+            <div class="meta-label">Nama Proyek</div>
+            <div class="meta-val">${record.nama_proyek}</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-label">Area Kerja</div>
+            <div class="meta-val">${record.area}</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-label">Tanggal Safety Inspection</div>
+            <div class="meta-val">${formatDate(record.tanggal_inspection)}</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-label">Skor Diperoleh / Pembagi Relevan</div>
+            <div class="meta-val">${parsedInfo.totalSkor} / ${parsedInfo.totalRelevan} Poin</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-label">Parameter Tidak Relevan (N/A)</div>
+            <div class="meta-val">${parsedInfo.totalNA} Parameter</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-label">Total Parameter Standar</div>
+            <div class="meta-val">${TOTAL_QUESTIONS} Parameter (Kategori A - H)</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:42px;">Kode</th>
+              <th>Parameter Pemeriksaan K3</th>
+              <th style="width:95px;">Status Jawaban</th>
+              <th style="width:45px;">Skor</th>
+              <th style="width:190px;">Temuan Lapangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sectionsHtml}
+          </tbody>
+        </table>
+
+        <div class="sign-area">
+          <div class="sign-box">
+            <div>Diperiksa Oleh,</div>
+            <div><b>Inspector / Officer K3</b></div>
+            <div class="sign-line">( ........................................ )</div>
+          </div>
+          <div class="sign-box">
+            <div>Mengetahui,</div>
+            <div><b>Kepala Proyek / Site Manager</b></div>
+            <div class="sign-line">( ........................................ )</div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   return (
     <div className="space-y-6 pb-16">
@@ -412,7 +1239,8 @@ export default function PerformanceK3Page() {
             Performance K3
           </h1>
           <p className="text-sm md:text-base text-blue-100/90 max-w-2xl font-normal leading-relaxed">
-            Evaluasi kepatuhan, scoring komprehensif, dan pemantauan standar keselamatan & kesehatan kerja di seluruh area proyek.
+            Evaluasi kepatuhan, scoring komprehensif dengan pembagi dinamis, dan
+            pemantauan standar keselamatan & kesehatan kerja seluruh proyek.
           </p>
         </div>
 
@@ -432,26 +1260,31 @@ export default function PerformanceK3Page() {
             variant="outline"
             onClick={fetchRecords}
             disabled={refreshing}
-            className="bg-white/10 hover:bg-white/20 text-white border-white/20 rounded-xl h-auto py-2.5 px-3 cursor-pointer"
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 rounded-xl h-auto py-2.5 px-3.5 cursor-pointer flex items-center gap-2"
             title="Muat Ulang Data"
           >
-            <RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />
+            <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+            <span className="hidden sm:inline text-xs font-semibold">
+              Refresh
+            </span>
           </Button>
         </div>
       </div>
 
       {/* STAT CARDS OVERVIEW */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border border-slate-200/80 shadow-sm bg-white hover:border-blue-300 transition-colors">
           <CardContent className="p-4 md:p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Total Penilaian
+                Total Inspeksi Keseluruhan
               </span>
               <div className="text-2xl md:text-3xl font-black text-slate-800">
-                {summaryStats.total}
+                {summaryStats.totalInspeksi}
               </div>
-              <span className="text-[11px] text-slate-400">Inspeksi tercatat</span>
+              <span className="text-[11px] text-slate-400">
+                Data audit tercatat
+              </span>
             </div>
             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
               <Layers size={24} />
@@ -463,13 +1296,13 @@ export default function PerformanceK3Page() {
           <CardContent className="p-4 md:p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Rata-rata Skor
+                Rata-rata Skor Nasional
               </span>
               <div className="text-2xl md:text-3xl font-black text-emerald-600">
                 {summaryStats.avgScore}%
               </div>
               <span className="text-[11px] text-slate-400">
-                {Number(summaryStats.avgScore) >= 85 ? "Kategori Sangat Baik" : "Indeks Kepatuhan"}
+                Indeks Kepatuhan K3 Global
               </span>
             </div>
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
@@ -482,15 +1315,17 @@ export default function PerformanceK3Page() {
           <CardContent className="p-4 md:p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Skor Tertinggi
+                Jumlah Proyek Aktif
               </span>
               <div className="text-2xl md:text-3xl font-black text-indigo-600">
-                {summaryStats.highestScore}%
+                {summaryStats.activeProjectsCount}
               </div>
-              <span className="text-[11px] text-slate-400">Best practice proyek</span>
+              <span className="text-[11px] text-slate-400">
+                Proyek unik yang dinilai
+              </span>
             </div>
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-              <TrendingUp size={24} />
+              <Briefcase size={24} />
             </div>
           </CardContent>
         </Card>
@@ -504,7 +1339,9 @@ export default function PerformanceK3Page() {
               <div className="text-2xl md:text-3xl font-black text-rose-600">
                 {summaryStats.needsAttention}
               </div>
-              <span className="text-[11px] text-slate-400">Skor di bawah 70%</span>
+              <span className="text-[11px] text-slate-400">
+                Skor di bawah 70%
+              </span>
             </div>
             <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
               <AlertTriangle size={24} />
@@ -513,45 +1350,178 @@ export default function PerformanceK3Page() {
         </Card>
       </div>
 
-      {/* FILTER & TOOLBAR PENCARIAN */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      {/* GRAFIK TREN RATA-RATA SKOR K3 BERDASARKAN AREA / PROYEK */}
+      <Card className="border border-slate-200/80 shadow-sm bg-white overflow-hidden">
+        <CardContent className="p-5 md:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={19} className="text-blue-600" />
+                <h2 className="font-bold text-slate-800 text-base">
+                  Grafik Tren Rata-rata Skor Persentase K3
+                </h2>
+              </div>
+              <p className="text-xs text-slate-500">
+                Perbandingan tingkat kepatuhan K3 berdasarkan agregasi{" "}
+                {chartGroupMode === "area" ? "Area Kerja" : "Proyek"}
+              </p>
+            </div>
+
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setChartGroupMode("area")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${chartGroupMode === "area"
+                  ? "bg-white text-blue-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+                  }`}
+              >
+                Per Area
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartGroupMode("proyek")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${chartGroupMode === "proyek"
+                  ? "bg-white text-blue-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+                  }`}
+              >
+                Per Proyek
+              </button>
+            </div>
+          </div>
+
+          {chartData.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              Belum ada data untuk menampilkan grafik tren skor K3.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3.5 max-h-[320px] overflow-y-auto pr-1">
+              {chartData.map((item, index) => {
+                const grade = getScoreGrade(item.avgScore);
+                return (
+                  <div
+                    key={item.label}
+                    className="p-3 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-md bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-[10px] shrink-0">
+                          {index + 1}
+                        </span>
+                        <span
+                          className="font-bold text-slate-800 truncate"
+                          title={item.label}
+                        >
+                          {item.label}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0">
+                          ({item.count} audit)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${grade.color}`}
+                        >
+                          {grade.grade}
+                        </span>
+                        <span className="font-black text-slate-900 text-xs">
+                          {item.avgScore}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-full h-2.5 bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${grade.barColor} rounded-full transition-all duration-500`}
+                        style={{
+                          width: `${Math.min(100, Math.max(0, item.avgScore))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* FILTER & SORTIR (RAPI TANPA TOMBOL CETAK DI LUAR) */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div className="relative flex-1">
-          <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search
+            size={18}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari berdasarkan nama proyek atau area..."
+            placeholder="Cari nama proyek atau lokasi area..."
             className="pl-10 h-10 bg-slate-50/50 border-slate-200 focus:bg-white rounded-lg text-sm w-full"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Filter size={16} className="text-slate-400 shrink-0 hidden sm:block" />
-          <select
-            value={selectedAreaFilter}
-            onChange={(e) => setSelectedAreaFilter(e.target.value)}
-            className="h-10 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:border-blue-500 cursor-pointer min-w-[180px]"
-          >
-            <option value="Semua Area">Semua Area ({records.length})</option>
-            {ALL_AREAS.map((area) => (
-              <option key={area} value={area}>
-                {area}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Filter Area */}
+          <div className="flex items-center gap-1.5">
+            <Filter
+              size={15}
+              className="text-slate-400 shrink-0 hidden sm:block"
+            />
+            <select
+              value={selectedAreaFilter}
+              onChange={(e) => setSelectedAreaFilter(e.target.value)}
+              className="h-10 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm font-medium text-slate-700 outline-none focus:border-blue-500 cursor-pointer"
+            >
+              <option value="Semua Area">Semua Area ({records.length})</option>
+              {ALL_AREAS.map((area) => (
+                <option key={area} value={area}>
+                  {area}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sortir */}
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown
+              size={15}
+              className="text-slate-400 shrink-0 hidden sm:block"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="h-10 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs md:text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 cursor-pointer"
+              title="Urutkan Data"
+            >
+              <option value="score_desc">
+                Skor (%): Tertinggi ke Terendah
               </option>
-            ))}
-          </select>
+              <option value="score_asc">
+                Skor (%): Terendah ke Tertinggi
+              </option>
+              <option value="proyek_asc">Nama Proyek: Abjad A - Z</option>
+              <option value="proyek_desc">Nama Proyek: Abjad Z - A</option>
+              <option value="area_asc">Area: Abjad A - Z</option>
+              <option value="area_desc">Area: Abjad Z - A</option>
+              <option value="tanggal_desc">Tanggal: Terbaru</option>
+              <option value="tanggal_asc">Tanggal: Terlama</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* TABEL DAFTAR PENILAIAN */}
+      {/* TABEL DAFTAR DATA PERFORMANCE K3 */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <FileSpreadsheet size={18} className="text-blue-600" />
             <h2 className="font-bold text-slate-800 text-sm md:text-base">
-              Daftar Hasil Penilaian Performance K3
+              Daftar Evaluasi Performance K3 Proyek
             </h2>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">
-              {filteredRecords.length} data
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">
+              {filteredAndSortedRecords.length} Data
             </span>
           </div>
         </div>
@@ -559,55 +1529,56 @@ export default function PerformanceK3Page() {
         {loading ? (
           <div className="py-20 text-center flex flex-col items-center justify-center space-y-3">
             <RefreshCw size={28} className="animate-spin text-blue-600" />
-            <p className="text-slate-500 text-sm font-medium">Memuat data penilaian K3...</p>
+            <p className="text-slate-500 text-sm font-medium">
+              Memuat data dari Supabase...
+            </p>
           </div>
-        ) : filteredRecords.length === 0 ? (
+        ) : filteredAndSortedRecords.length === 0 ? (
           <div className="py-16 text-center flex flex-col items-center justify-center space-y-3 px-4">
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-              <FileCheck size={28} />
+              <FileText size={28} />
             </div>
             <div className="space-y-1">
-              <h3 className="font-bold text-slate-700 text-base">Belum Ada Penilaian</h3>
+              <h3 className="font-bold text-slate-700 text-base">
+                Tidak Ada Data
+              </h3>
               <p className="text-slate-500 text-xs md:text-sm max-w-sm">
                 {searchQuery || selectedAreaFilter !== "Semua Area"
-                  ? "Tidak ada data yang sesuai dengan filter pencarian Anda."
-                  : "Mulai buat evaluasi keselamatan kerja baru dengan mengklik tombol Tambah Penilaian."}
+                  ? "Tidak ada hasil yang sesuai dengan kriteria filter Anda."
+                  : "Belum ada rekaman inspeksi K3. Klik tombol Tambah Penilaian untuk mulai."}
               </p>
             </div>
-            {!searchQuery && selectedAreaFilter === "Semua Area" && (
-              <Button
-                onClick={() => {
-                  resetForm();
-                  setIsFormOpen(true);
-                }}
-                className="mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2 px-4 rounded-lg cursor-pointer"
-              >
-                <Plus size={16} className="mr-1.5" />
-                Tambah Penilaian Pertama
-              </Button>
-            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-200">
-                  <TableHead className="w-12 text-center font-bold text-slate-700 text-xs">No</TableHead>
-                  <TableHead className="font-bold text-slate-700 text-xs">Nama Proyek</TableHead>
-                  <TableHead className="font-bold text-slate-700 text-xs">Area</TableHead>
-                  <TableHead className="font-bold text-slate-700 text-xs">Tanggal</TableHead>
+                  <TableHead className="w-12 text-center font-bold text-slate-700 text-xs">
+                    No
+                  </TableHead>
+                  <TableHead className="font-bold text-slate-700 text-xs max-w-[260px] w-[260px]">
+                    Nama Proyek
+                  </TableHead>
+                  <TableHead className="font-bold text-slate-700 text-xs">
+                    Area / Lokasi
+                  </TableHead>
+                  <TableHead className="font-bold text-slate-700 text-xs">
+                    Tanggal Inspeksi
+                  </TableHead>
                   <TableHead className="font-bold text-slate-700 text-xs text-center w-52">
                     Hasil Score (%)
                   </TableHead>
-                  <TableHead className="font-bold text-slate-700 text-xs text-right pr-6 w-32">
+                  <TableHead className="font-bold text-slate-700 text-xs text-right pr-6 w-44">
                     Aksi
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRecords.map((row, idx) => {
+                {filteredAndSortedRecords.map((row, idx) => {
                   const scoreNum = Number(row.score_percentage) || 0;
                   const gradeInfo = getScoreGrade(scoreNum);
+
                   return (
                     <TableRow
                       key={row.id}
@@ -617,10 +1588,18 @@ export default function PerformanceK3Page() {
                         {idx + 1}
                       </TableCell>
 
-                      <TableCell className="font-bold text-slate-800 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Building2 size={16} className="text-slate-400 shrink-0" />
-                          <span className="line-clamp-1">{row.nama_proyek}</span>
+                      <TableCell className="font-bold text-slate-800 text-sm max-w-[260px]">
+                        <div
+                          className="flex items-center gap-2 min-w-0"
+                          title={row.nama_proyek}
+                        >
+                          <Building2
+                            size={16}
+                            className="text-slate-400 shrink-0"
+                          />
+                          <span className="truncate block">
+                            {row.nama_proyek}
+                          </span>
                         </div>
                       </TableCell>
 
@@ -645,36 +1624,53 @@ export default function PerformanceK3Page() {
                               {scoreNum.toFixed(1)}%
                             </span>
                             <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${gradeInfo.color}`}
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${gradeInfo.color}`}
                             >
                               {gradeInfo.grade}
                             </span>
                           </div>
-                          {/* Mini Progress Bar */}
                           <div className="w-36 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                             <div
                               className={`h-full ${gradeInfo.barColor} transition-all duration-500 rounded-full`}
-                              style={{ width: `${Math.min(100, Math.max(0, scoreNum))}%` }}
+                              style={{
+                                width: `${Math.min(100, Math.max(0, scoreNum))}%`,
+                              }}
                             />
                           </div>
                         </div>
                       </TableCell>
 
+                      {/* KOLOM AKSI RAPI: DETAIL, EDIT, HAPUS */}
                       <TableCell className="text-right pr-6">
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
-                            variant="ghost"
+                            variant="default"
                             size="sm"
                             onClick={() => {
                               setSelectedRecord(row);
-                              setDetailFilterOnlyNegative(false);
+                              setActiveCategoryFilter("ALL");
+                              setFilterOnlyWithTemuan(false);
                               setDetailModalOpen(true);
                             }}
-                            className="h-8 px-2.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
-                            title="Lihat Detail Penilaian"
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8 px-3 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title="Buka Detail & Cetak Laporan"
                           >
                             <Eye size={14} />
                             Detail
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setRecordToEdit(row);
+                              setEditModalOpen(true);
+                            }}
+                            className="h-8 px-2.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 rounded-lg flex items-center gap-1 cursor-pointer"
+                            title="Edit Detail Proyek Ini"
+                          >
+                            <Pencil size={13} />
+                            Edit
                           </Button>
 
                           <Button
@@ -701,14 +1697,13 @@ export default function PerformanceK3Page() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL / DIALOG FORM PENILAIAN PERFORMANCE K3                              */}
+      {/* MODAL 1: FORMULIR TAMBAH PENILAIAN BARU                                   */}
       {/* ========================================================================= */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent
           id="k3-modal-content"
           className="w-[96vw] sm:max-w-4xl max-h-[92vh] overflow-y-auto p-0 rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col"
         >
-          {/* HEADER MODAL STICKY */}
           <div className="sticky top-0 z-30 bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white p-5 rounded-t-2xl shadow-md">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -720,11 +1715,11 @@ export default function PerformanceK3Page() {
                   Formulir Penilaian Performance K3
                 </DialogTitle>
                 <p className="text-xs md:text-sm text-blue-100/90 mt-1">
-                  Lengkapi data proyek dan berikan penilaian untuk setiap parameter keselamatan kerja.
+                  Pilih Ya, Tidak, atau Tidak Relevan (N/A). Pertanyaan Tidak
+                  Relevan otomatis mengurangi pembagi soal.
                 </p>
               </div>
 
-              {/* LIVE SCORE INDICATOR */}
               <div className="hidden sm:flex flex-col items-end bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/20 shrink-0">
                 <span className="text-[10px] font-semibold text-blue-100 uppercase tracking-wider">
                   Skor Sementara
@@ -733,34 +1728,42 @@ export default function PerformanceK3Page() {
                   {liveScoreData.percentage}%
                 </div>
                 <div className="text-[11px] text-blue-200 mt-1 font-medium">
-                  {liveScoreData.answeredCount} / {TOTAL_QUESTIONS} Terjawab
+                  Skor: {liveScoreData.totalScore} /{" "}
+                  {liveScoreData.effectiveTotalQuestions} Relevan (
+                  {liveScoreData.naCount} N/A)
                 </div>
               </div>
             </div>
 
-            {/* LIVE SCORE PROGRESS BAR MOBILE/DESKTOP */}
             <div className="mt-3.5 space-y-1">
               <div className="flex justify-between text-[11px] font-medium text-blue-100">
-                <span>Kelengkapan Pengisian</span>
                 <span>
-                  {liveScoreData.answeredCount} dari {TOTAL_QUESTIONS} pertanyaan (
-                  {Math.round((liveScoreData.answeredCount / TOTAL_QUESTIONS) * 100)}%)
+                  Kelengkapan Pengisian ({liveScoreData.answeredCount} /{" "}
+                  {TOTAL_QUESTIONS} Parameter)
+                </span>
+                <span>
+                  {Math.round(
+                    (liveScoreData.answeredCount / TOTAL_QUESTIONS) * 100
+                  )}
+                  %
                 </span>
               </div>
               <div className="w-full h-2 bg-blue-950/40 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-orange-400 to-emerald-400 rounded-full transition-all duration-300"
                   style={{
-                    width: `${(liveScoreData.answeredCount / TOTAL_QUESTIONS) * 100}%`,
+                    width: `${(liveScoreData.answeredCount / TOTAL_QUESTIONS) * 100
+                      }%`,
                   }}
                 />
               </div>
             </div>
           </div>
 
-          {/* FORM BODY */}
-          <form onSubmit={handleSubmitForm} className="p-5 md:p-6 space-y-6 flex-1">
-            {/* ALERT ERROR JIKA VALIDASI GAGAL */}
+          <form
+            onSubmit={handleSubmitForm}
+            className="p-5 md:p-6 space-y-6 flex-1"
+          >
             {formErrors.length > 0 && (
               <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 space-y-2">
                 <div className="flex items-center gap-2 font-bold text-sm">
@@ -775,7 +1778,6 @@ export default function PerformanceK3Page() {
               </div>
             )}
 
-            {/* BAGIAN A: INFORMASI DASAR PROYEK */}
             <div className="bg-slate-50/80 p-4 md:p-5 rounded-xl border border-slate-200/80 space-y-4">
               <div className="flex items-center gap-2 text-slate-800 font-bold text-sm border-b border-slate-200/60 pb-2">
                 <Building2 size={16} className="text-blue-600" />
@@ -783,21 +1785,21 @@ export default function PerformanceK3Page() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Nama Proyek */}
-                <div className="space-y-1.5 md:col-span-1">
+                <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">
                     Nama Proyek <span className="text-rose-500">*</span>
                   </label>
                   <Input
                     required
                     value={formData.nama_proyek}
-                    onChange={(e) => setFormData({ ...formData, nama_proyek: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, nama_proyek: e.target.value })
+                    }
                     placeholder="Contoh: Renovasi Stasiun Gambir"
                     className="bg-white border-slate-200 text-sm h-10"
                   />
                 </div>
 
-                {/* Area Dropdown */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">
                     Area Proyek <span className="text-rose-500">*</span>
@@ -805,7 +1807,9 @@ export default function PerformanceK3Page() {
                   <select
                     required
                     value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, area: e.target.value })
+                    }
                     className="w-full h-10 px-3 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:border-blue-500"
                   >
                     {ALL_AREAS.map((area) => (
@@ -816,17 +1820,20 @@ export default function PerformanceK3Page() {
                   </select>
                 </div>
 
-                {/* Tanggal Safety Inspection */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700">
-                    Tanggal Safety Inspection <span className="text-rose-500">*</span>
+                    Tanggal Safety Inspection{" "}
+                    <span className="text-rose-500">*</span>
                   </label>
                   <Input
                     type="date"
                     required
                     value={formData.tanggal_inspection}
                     onChange={(e) =>
-                      setFormData({ ...formData, tanggal_inspection: e.target.value })
+                      setFormData({
+                        ...formData,
+                        tanggal_inspection: e.target.value,
+                      })
                     }
                     className="bg-white border-slate-200 text-sm h-10"
                   />
@@ -834,7 +1841,6 @@ export default function PerformanceK3Page() {
               </div>
             </div>
 
-            {/* ACTION CEPAT & NAVIGASI KATEGORI */}
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
                 <div>
@@ -843,11 +1849,10 @@ export default function PerformanceK3Page() {
                     Kuesioner Penilaian K3
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Pilih Ya/Tidak. Catatan Temuan wajib diisi jika jawaban bernilai kondisi negatif/buruk.
+                    Catatan Temuan wajib diisi jika jawaban bernilai negatif.
                   </p>
                 </div>
 
-                {/* Tombol Isi Cepat Standar Baik */}
                 <Button
                   type="button"
                   variant="outline"
@@ -860,11 +1865,11 @@ export default function PerformanceK3Page() {
                 </Button>
               </div>
 
-              {/* TABS KATEGORI (A s/d H) */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
                 {QUESTION_CATEGORIES.map((cat) => {
                   const progress = liveScoreData.categoryProgress[cat.id];
-                  const isComplete = progress && progress.answered === progress.total;
+                  const isComplete =
+                    progress && progress.answered === progress.total;
                   const isActive = activeCategoryTab === cat.id;
 
                   return (
@@ -872,25 +1877,23 @@ export default function PerformanceK3Page() {
                       key={cat.id}
                       type="button"
                       onClick={() => setActiveCategoryTab(cat.id)}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer border ${
-                        isActive
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                          : isComplete
+                      className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer border ${isActive
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : isComplete
                           ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
                           : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                      }`}
+                        }`}
                     >
                       <span>
                         {cat.id}. {cat.name}
                       </span>
                       <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isActive
-                            ? "bg-white/20 text-white"
-                            : isComplete
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isActive
+                          ? "bg-white/20 text-white"
+                          : isComplete
                             ? "bg-emerald-200/60 text-emerald-900"
                             : "bg-slate-200 text-slate-600"
-                        }`}
+                          }`}
                       >
                         {progress?.answered || 0}/{cat.questions.length}
                       </span>
@@ -900,186 +1903,218 @@ export default function PerformanceK3Page() {
               </div>
             </div>
 
-            {/* DAFTAR PERTANYAAN UNTUK KATEGORI AKTIF */}
-            {QUESTION_CATEGORIES.filter((c) => c.id === activeCategoryTab).map((cat) => (
-              <div key={cat.id} className="space-y-4">
-                <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-xl flex items-center justify-between">
-                  <div className="font-bold text-sm text-blue-900 flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs">
-                      {cat.id}
+            {QUESTION_CATEGORIES.filter((c) => c.id === activeCategoryTab).map(
+              (cat) => (
+                <div key={cat.id} className="space-y-4">
+                  <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-xl flex items-center justify-between">
+                    <div className="font-bold text-sm text-blue-900 flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs">
+                        {cat.id}
+                      </span>
+                      <span>
+                        Kategori {cat.id}: {cat.name}
+                      </span>
+                    </div>
+                    <span className="text-xs font-semibold text-blue-700">
+                      {cat.questions.length} Pertanyaan
                     </span>
-                    <span>Kategori {cat.id}: {cat.name}</span>
                   </div>
-                  <span className="text-xs font-semibold text-blue-700">
-                    {cat.questions.length} Pertanyaan
-                  </span>
-                </div>
 
-                <div className="space-y-4">
-                  {cat.questions.map((q, qIndex) => {
-                    const currentAnswer = answers[q.id]?.jawaban || "";
-                    const currentTemuan = answers[q.id]?.temuan || "";
-                    const evalRes = evaluateQuestionAnswer(q, currentAnswer);
-                    const isRequiredTemuan = evalRes.isNegative;
+                  <div className="space-y-4">
+                    {cat.questions.map((q) => {
+                      const currentAnswer = answers[q.id]?.jawaban || "";
+                      const currentTemuan = answers[q.id]?.temuan || "";
+                      const evalRes = evaluateQuestionAnswer(q, currentAnswer);
+                      const isRequiredTemuan = evalRes.isNegative;
 
-                    return (
-                      <div
-                        key={q.id}
-                        className={`p-4 md:p-5 rounded-xl border transition-all ${
-                          !currentAnswer
+                      return (
+                        <div
+                          key={q.id}
+                          className={`p-4 md:p-5 rounded-xl border transition-all ${!currentAnswer
                             ? "bg-white border-slate-200"
-                            : evalRes.isGood
-                            ? "bg-emerald-50/20 border-emerald-200/80 shadow-xs"
-                            : "bg-rose-50/25 border-rose-200 shadow-xs"
-                        }`}
-                      >
-                        {/* Header Pertanyaan */}
-                        <div className="space-y-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-2.5">
-                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold shrink-0 border border-slate-200 mt-0.5">
-                                {q.code}
-                              </span>
-                              <div>
-                                <p className="text-sm font-semibold text-slate-800 leading-snug">
-                                  {q.text}
-                                </p>
+                            : evalRes.isNA
+                              ? "bg-slate-50 border-slate-300"
+                              : evalRes.isGood
+                                ? "bg-emerald-50/20 border-emerald-200/80 shadow-xs"
+                                : "bg-rose-50/25 border-rose-200 shadow-xs"
+                            }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2.5">
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold shrink-0 border border-slate-200 mt-0.5">
+                                  {q.code}
+                                </span>
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-800 leading-snug">
+                                    {q.text}
+                                  </p>
 
-                                {/* Peringatan khusus untuk Reverse Logic (C.1 & C.2) */}
-                                {q.isReverse && (
-                                  <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium">
-                                    <AlertTriangle size={12} className="text-amber-600 shrink-0" />
-                                    <span>
-                                      <strong>Parameter Bahaya:</strong> Menjawab <strong>"Tidak"</strong> = Kondisi Baik (Skor 1). Menjawab <strong>"Ya"</strong> = Kondisi Negatif/Ada Bahaya (Skor 0, Temuan Wajib Diisi).
-                                    </span>
-                                  </div>
-                                )}
+                                  {q.isReverse && (
+                                    <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium">
+                                      <AlertTriangle
+                                        size={12}
+                                        className="text-amber-600 shrink-0"
+                                      />
+                                      <span>
+                                        <strong>Parameter Bahaya:</strong>{" "}
+                                        Menjawab <strong>&quot;Tidak&quot;</strong> =
+                                        Kondisi Baik (Skor 1). Menjawab{" "}
+                                        <strong>&quot;Ya&quot;</strong> = Ada Bahaya (Skor
+                                        0, Temuan Wajib).
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
+
+                              {currentAnswer && (
+                                <span
+                                  className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${evalRes.isNA
+                                    ? "bg-slate-200 text-slate-700 border border-slate-300"
+                                    : evalRes.isGood
+                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                      : "bg-rose-100 text-rose-800 border border-rose-300"
+                                    }`}
+                                >
+                                  {evalRes.isNA
+                                    ? "N/A (Pembagi -1)"
+                                    : evalRes.isGood
+                                      ? "+1 Poin (Baik)"
+                                      : "0 Poin (Buruk)"}
+                                </span>
+                              )}
                             </div>
 
-                            {/* Status Skor Badge */}
-                            {currentAnswer && (
-                              <span
-                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full shrink-0 ${
-                                  evalRes.isGood
-                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                    : "bg-rose-100 text-rose-800 border border-rose-300"
-                                }`}
-                              >
-                                {evalRes.isGood ? "+1 Poin (Baik)" : "0 Poin (Buruk)"}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Pilihan Ganda (Radio Button): Ya atau Tidak */}
-                          <div className="pt-2 flex flex-wrap items-center gap-3">
-                            <label
-                              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
-                                currentAnswer === "Ya"
+                            <div className="pt-2 flex flex-wrap items-center gap-3">
+                              <label
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${currentAnswer === "Ya"
                                   ? q.isReverse
                                     ? "bg-rose-600 text-white border-rose-600 shadow-sm"
                                     : "bg-emerald-600 text-white border-emerald-600 shadow-sm"
                                   : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name={`q_${q.id}`}
-                                value="Ya"
-                                checked={currentAnswer === "Ya"}
-                                onChange={() => handleAnswerChange(q.id, "Ya")}
-                                className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-                              />
-                              <span>Ya</span>
-                              {currentAnswer === "Ya" && (
-                                <span className="text-[10px] opacity-90 font-medium">
-                                  {q.isReverse ? "(Negatif)" : "(Baik)"}
-                                </span>
-                              )}
-                            </label>
+                                  }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`q_${q.id}`}
+                                  value="Ya"
+                                  checked={currentAnswer === "Ya"}
+                                  onChange={() => handleAnswerChange(q.id, "Ya")}
+                                  className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                                />
+                                <span>Ya</span>
+                                {currentAnswer === "Ya" && (
+                                  <span className="text-[10px] opacity-90 font-medium">
+                                    {q.isReverse ? "(Negatif)" : "(Baik)"}
+                                  </span>
+                                )}
+                              </label>
 
-                            <label
-                              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
-                                currentAnswer === "Tidak"
+                              <label
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${currentAnswer === "Tidak"
                                   ? q.isReverse
                                     ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
                                     : "bg-rose-600 text-white border-rose-600 shadow-sm"
                                   : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name={`q_${q.id}`}
-                                value="Tidak"
-                                checked={currentAnswer === "Tidak"}
-                                onChange={() => handleAnswerChange(q.id, "Tidak")}
-                                className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-                              />
-                              <span>Tidak</span>
-                              {currentAnswer === "Tidak" && (
-                                <span className="text-[10px] opacity-90 font-medium">
-                                  {q.isReverse ? "(Baik)" : "(Negatif)"}
-                                </span>
-                              )}
-                            </label>
-                          </div>
-
-                          {/* Textarea: "Temuan" */}
-                          <div className="pt-2 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <label
-                                className={`text-xs font-bold flex items-center gap-1.5 ${
-                                  isRequiredTemuan ? "text-rose-700" : "text-slate-600"
-                                }`}
+                                  }`}
                               >
-                                {isRequiredTemuan ? (
-                                  <>
-                                    <AlertCircle size={14} className="text-rose-600" />
-                                    <span>Temuan Lapangan (Wajib Diisi)*</span>
-                                  </>
-                                ) : (
-                                  <span>Catatan Temuan (Opsional)</span>
+                                <input
+                                  type="radio"
+                                  name={`q_${q.id}`}
+                                  value="Tidak"
+                                  checked={currentAnswer === "Tidak"}
+                                  onChange={() =>
+                                    handleAnswerChange(q.id, "Tidak")
+                                  }
+                                  className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                                />
+                                <span>Tidak</span>
+                                {currentAnswer === "Tidak" && (
+                                  <span className="text-[10px] opacity-90 font-medium">
+                                    {q.isReverse ? "(Baik)" : "(Negatif)"}
+                                  </span>
                                 )}
                               </label>
 
-                              {isRequiredTemuan && (
-                                <span className="text-[10px] font-semibold text-rose-600 bg-rose-100/70 px-2 py-0.5 rounded-full border border-rose-200">
-                                  Kondisi negatif terdeteksi
-                                </span>
+                              {q.allowNA && (
+                                <label
+                                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${currentAnswer === "Tidak Relevan"
+                                    ? "bg-slate-700 text-white border-slate-700 shadow-sm"
+                                    : "bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100"
+                                    }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`q_${q.id}`}
+                                    value="Tidak Relevan"
+                                    checked={currentAnswer === "Tidak Relevan"}
+                                    onChange={() =>
+                                      handleAnswerChange(q.id, "Tidak Relevan")
+                                    }
+                                    className="w-3.5 h-3.5 accent-slate-700 cursor-pointer"
+                                  />
+                                  <MinusCircle size={13} />
+                                  <span>Tidak Relevan (N/A)</span>
+                                </label>
                               )}
                             </div>
 
-                            <Textarea
-                              value={currentTemuan}
-                              onChange={(e) => handleTemuanChange(q.id, e.target.value)}
-                              placeholder={
-                                isRequiredTemuan
-                                  ? "Wajib dijelaskan: Uraikan temuan kekurangan, ketidaksesuaian, atau kondisi di lapangan..."
-                                  : "Tuliskan catatan observasi atau temuan jika ada..."
-                              }
-                              className={`text-xs min-h-[64px] bg-white transition-colors ${
-                                isRequiredTemuan
+                            <div className="pt-2 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label
+                                  className={`text-xs font-bold flex items-center gap-1.5 ${isRequiredTemuan
+                                    ? "text-rose-700"
+                                    : "text-slate-600"
+                                    }`}
+                                >
+                                  {isRequiredTemuan ? (
+                                    <>
+                                      <AlertCircle
+                                        size={14}
+                                        className="text-rose-600"
+                                      />
+                                      <span>Temuan Lapangan (Wajib Diisi)*</span>
+                                    </>
+                                  ) : (
+                                    <span>Catatan Temuan (Opsional)</span>
+                                  )}
+                                </label>
+
+                                {isRequiredTemuan && (
+                                  <span className="text-[10px] font-semibold text-rose-600 bg-rose-100/70 px-2 py-0.5 rounded-full border border-rose-200">
+                                    Kondisi negatif terdeteksi
+                                  </span>
+                                )}
+                              </div>
+
+                              <Textarea
+                                value={currentTemuan}
+                                onChange={(e) =>
+                                  handleTemuanChange(q.id, e.target.value)
+                                }
+                                placeholder={
+                                  isRequiredTemuan
+                                    ? "Wajib dijelaskan: Uraikan temuan kekurangan, ketidaksesuaian, atau kondisi di lapangan..."
+                                    : "Tuliskan catatan observasi atau keterangan tambahan..."
+                                }
+                                className={`text-xs min-h-[60px] bg-white transition-colors ${isRequiredTemuan
                                   ? !currentTemuan.trim()
                                     ? "border-rose-400 focus:border-rose-600 ring-1 ring-rose-200"
                                     : "border-emerald-300 focus:border-emerald-500"
                                   : "border-slate-200"
-                              }`}
-                            />
-                            {isRequiredTemuan && !currentTemuan.trim() && (
-                              <p className="text-[11px] text-rose-600 font-medium">
-                                Kolom temuan ini harus diisi sebelum mengirim penilaian.
-                              </p>
-                            )}
+                                  }`}
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
 
-            {/* NAVIGASI KATEGORI BERIKUTNYA */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-200">
               <Button
                 type="button"
@@ -1090,7 +2125,9 @@ export default function PerformanceK3Page() {
                     (c) => c.id === activeCategoryTab
                   );
                   if (currentIndex > 0) {
-                    setActiveCategoryTab(QUESTION_CATEGORIES[currentIndex - 1].id);
+                    setActiveCategoryTab(
+                      QUESTION_CATEGORIES[currentIndex - 1].id
+                    );
                   }
                 }}
                 disabled={activeCategoryTab === "A"}
@@ -1112,7 +2149,9 @@ export default function PerformanceK3Page() {
                     (c) => c.id === activeCategoryTab
                   );
                   if (currentIndex < QUESTION_CATEGORIES.length - 1) {
-                    setActiveCategoryTab(QUESTION_CATEGORIES[currentIndex + 1].id);
+                    setActiveCategoryTab(
+                      QUESTION_CATEGORIES[currentIndex + 1].id
+                    );
                   }
                 }}
                 disabled={activeCategoryTab === "H"}
@@ -1122,14 +2161,19 @@ export default function PerformanceK3Page() {
               </Button>
             </div>
 
-            {/* FOOTER ACTIONS */}
             <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 -mx-5 -mb-5 md:-mx-6 md:-mb-6 p-4 rounded-b-2xl">
               <div className="text-xs text-slate-600 font-medium">
                 Skor Akumulasi:{" "}
                 <span className="font-black text-slate-900 text-sm">
-                  {liveScoreData.totalScore} / {TOTAL_QUESTIONS}
+                  {liveScoreData.totalScore} /{" "}
+                  {liveScoreData.effectiveTotalQuestions}
                 </span>{" "}
                 ({liveScoreData.percentage}%)
+                {liveScoreData.naCount > 0 && (
+                  <span className="ml-1.5 text-slate-500">
+                    • {liveScoreData.naCount} Tidak Relevan
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -1167,23 +2211,24 @@ export default function PerformanceK3Page() {
       </Dialog>
 
       {/* ========================================================================= */}
-      {/* MODAL LIHAT DETAIL PENILAIAN                                              */}
+      {/* MODAL 2: DETAIL PENILAIAN & PUSAT CETAK / UNDUH LAPORAN                   */}
       {/* ========================================================================= */}
       <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent className="w-[96vw] sm:max-w-4xl max-h-[92vh] overflow-y-auto p-0 rounded-2xl bg-white shadow-2xl border border-slate-200 flex flex-col">
-          {selectedRecord && (
+          {selectedRecord && selectedRecordParsed && (
             <>
-              {/* HEADER DETAIL */}
-              <div className="sticky top-0 z-20 bg-slate-900 text-white p-5 rounded-t-2xl shadow-md">
+              {/* HEADER MODAL */}
+              <div className="sticky top-0 z-30 bg-slate-900 text-white p-5 md:p-6 rounded-t-2xl shadow-md">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
-                      Detail Hasil Evaluasi Performance K3
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileCheck size={14} />
+                      Lembar Evaluasi Rincian Performance K3
                     </div>
-                    <DialogTitle className="text-xl md:text-2xl font-black text-white mt-0.5">
+                    <DialogTitle className="text-xl md:text-2xl font-black text-white">
                       {selectedRecord.nama_proyek}
                     </DialogTitle>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-2">
+                    <DialogDescription className="text-xs text-slate-300 flex flex-wrap items-center gap-3 pt-1">
                       <span className="flex items-center gap-1">
                         <MapPin size={13} className="text-blue-400" />
                         {selectedRecord.area}
@@ -1193,18 +2238,27 @@ export default function PerformanceK3Page() {
                         <Calendar size={13} className="text-blue-400" />
                         {formatDate(selectedRecord.tanggal_inspection)}
                       </span>
-                    </div>
+                      <span>•</span>
+                      <span>
+                        Skor: {selectedRecordParsed.totalSkor} /{" "}
+                        {selectedRecordParsed.totalRelevan} Relevan (
+                        {selectedRecordParsed.totalNA} N/A)
+                      </span>
+                    </DialogDescription>
                   </div>
 
-                  {/* SCORE BADGE BESAR */}
                   {(() => {
                     const sNum = Number(selectedRecord.score_percentage) || 0;
                     const gInfo = getScoreGrade(sNum);
                     return (
-                      <div className="flex items-center gap-3 bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 self-start md:self-center">
+                      <div className="flex items-center gap-3.5 bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 self-start md:self-center shrink-0">
                         <div className="text-right">
-                          <div className="text-xs font-semibold text-slate-300">Skor Akhir</div>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gInfo.badgeColor}`}>
+                          <div className="text-[11px] font-semibold text-slate-300">
+                            Skor Akhir
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gInfo.badgeColor}`}
+                          >
                             {gInfo.grade}
                           </span>
                         </div>
@@ -1217,171 +2271,289 @@ export default function PerformanceK3Page() {
                 </div>
               </div>
 
-              {/* DETAIL CONTENT */}
+              {/* BODY DETAIL MODAL */}
               <div className="p-5 md:p-6 space-y-6 flex-1">
-                {/* RINGKASAN SKOR PER KATEGORI */}
-                {selectedRecord.detail_penilaian?.category_scores && (
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      Distribusi Skor per Kategori
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {Object.entries(selectedRecord.detail_penilaian.category_scores).map(
-                        ([catId, catData]) => (
-                          <div
-                            key={catId}
-                            className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5"
-                          >
-                            <div className="flex justify-between items-center text-xs font-bold text-slate-700">
-                              <span className="truncate">{catId}. {catData.name}</span>
-                              <span className="text-slate-900">{catData.percentage}%</span>
-                            </div>
-                            <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${
-                                  catData.percentage >= 85
-                                    ? "bg-emerald-500"
-                                    : catData.percentage >= 70
-                                    ? "bg-blue-500"
-                                    : "bg-amber-500"
-                                } rounded-full`}
-                                style={{ width: `${catData.percentage}%` }}
-                              />
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-medium">
-                              Skor: {catData.score} dari {catData.total}
-                            </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* FILTER PERTANYAAN */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                  <h3 className="font-bold text-slate-800 text-sm">
-                    Daftar Parameter Penilaian & Temuan Lapangan
-                  </h3>
-
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600 flex items-center gap-2 cursor-pointer font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                <div className="space-y-3 border-b border-slate-200 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Navigasi Kategori Penilaian:
+                    </span>
+                    <label className="text-xs text-slate-600 flex items-center gap-2 cursor-pointer font-medium bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 transition-colors self-start sm:self-auto">
                       <input
                         type="checkbox"
-                        checked={detailFilterOnlyNegative}
-                        onChange={(e) => setDetailFilterOnlyNegative(e.target.checked)}
-                        className="rounded accent-rose-600 cursor-pointer"
+                        checked={filterOnlyWithTemuan}
+                        onChange={(e) =>
+                          setFilterOnlyWithTemuan(e.target.checked)
+                        }
+                        className="rounded accent-blue-600 cursor-pointer"
                       />
-                      <span>Tampilkan Hanya Temuan Negatif / Masalah</span>
+                      <span>Hanya Tampilkan Yang Ada Catatan Temuan</span>
                     </label>
+                  </div>
+
+                  {/* TAB BUTTONS */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => setActiveCategoryFilter("ALL")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${activeCategoryFilter === "ALL"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                        }`}
+                    >
+                      Semua Kategori (A - H)
+                    </button>
+
+                    {selectedRecordParsed.categories.map((cat) => {
+                      const isActive = activeCategoryFilter === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setActiveCategoryFilter(cat.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${isActive
+                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                            : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                            }`}
+                        >
+                          {cat.id}. {cat.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* ITEM DETAIL LIST */}
-                <div className="space-y-3">
-                  {(() => {
-                    const allItems = selectedRecord.detail_penilaian?.items || [];
-                    const displayItems = detailFilterOnlyNegative
-                      ? allItems.filter((i) => i.is_negative)
-                      : allItems;
+                {/* LOOPING KATEGORI A SAMPAI H */}
+                {selectedRecordParsed.categories.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 text-sm bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    Tidak ada rincian data kuesioner yang tersedia pada record
+                    ini.
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {selectedRecordParsed.categories
+                      .filter(
+                        (cat) =>
+                          activeCategoryFilter === "ALL" ||
+                          activeCategoryFilter === cat.id
+                      )
+                      .map((cat) => {
+                        const displayItems = filterOnlyWithTemuan
+                          ? cat.items.filter((item) =>
+                            hasTemuanContent(item.temuan)
+                          )
+                          : cat.items;
 
-                    if (displayItems.length === 0) {
-                      return (
-                        <div className="py-12 text-center text-slate-500 text-xs font-medium bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                          {detailFilterOnlyNegative
-                            ? "Bagus sekali! Tidak ditemukan parameter bernilai negatif / unsafe pada proyek ini."
-                            : "Tidak ada detail kuesioner yang tersedia."}
-                        </div>
-                      );
-                    }
+                        if (displayItems.length === 0 && filterOnlyWithTemuan) {
+                          return null;
+                        }
 
-                    return displayItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`p-3.5 rounded-xl border text-xs transition-colors ${
-                          item.is_negative
-                            ? "bg-rose-50/30 border-rose-200"
-                            : "bg-white border-slate-200"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2.5">
-                            <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700 text-[11px] shrink-0 border border-slate-200 mt-0.5">
-                              {item.code}
-                            </span>
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-blue-600 uppercase">
-                                {item.kategori}
+                        return (
+                          <div
+                            key={cat.id}
+                            className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs"
+                          >
+                            <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-md bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
+                                  {cat.id}
+                                </span>
+                                <h3 className="font-bold text-slate-800 text-sm">
+                                  Kategori {cat.id}: {cat.name}
+                                </h3>
+                              </div>
+                              <span className="text-xs font-semibold text-blue-700">
+                                Skor: {cat.score}/{cat.relevantTotal} (
+                                {cat.percentage}%)
                               </span>
-                              <p className="font-semibold text-slate-800 text-sm leading-snug">
-                                {item.pertanyaan}
-                              </p>
+                            </div>
+
+                            <div className="divide-y divide-slate-100 p-2">
+                              {displayItems.map((item, itemIdx) => {
+                                const ansLower = (item.jawaban || "")
+                                  .trim()
+                                  .toLowerCase();
+                                const isYa = ansLower === "ya";
+                                const isTidak = ansLower === "tidak";
+                                const isNA = item.is_na;
+
+                                return (
+                                  <div
+                                    key={item.id || itemIdx}
+                                    className="p-3 hover:bg-slate-50/70 transition-colors rounded-lg space-y-2"
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex items-start gap-2.5">
+                                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 shrink-0 mt-0.5">
+                                          {item.code}
+                                        </span>
+                                        <p className="text-sm font-semibold text-slate-800 leading-snug">
+                                          {item.pertanyaan}
+                                        </p>
+                                      </div>
+
+                                      <div className="shrink-0 flex items-center gap-1.5">
+                                        {isNA ? (
+                                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                                            <MinusCircle
+                                              size={13}
+                                              className="text-slate-500"
+                                            />
+                                            Tidak Relevan
+                                          </span>
+                                        ) : isYa ? (
+                                          <span
+                                            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${item.is_reverse
+                                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                                              : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                              }`}
+                                          >
+                                            {item.is_reverse ? (
+                                              <XCircle
+                                                size={13}
+                                                className="text-rose-600"
+                                              />
+                                            ) : (
+                                              <CheckCircle2
+                                                size={13}
+                                                className="text-emerald-600"
+                                              />
+                                            )}
+                                            Ya
+                                          </span>
+                                        ) : isTidak ? (
+                                          <span
+                                            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${item.is_reverse
+                                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                              : "bg-rose-100 text-rose-800 border-rose-300"
+                                              }`}
+                                          >
+                                            {item.is_reverse ? (
+                                              <CheckCircle2
+                                                size={13}
+                                                className="text-emerald-600"
+                                              />
+                                            ) : (
+                                              <XCircle
+                                                size={13}
+                                                className="text-rose-600"
+                                              />
+                                            )}
+                                            Tidak
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                            {item.jawaban || "-"}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {hasTemuanContent(item.temuan) && (
+                                      <div className="mt-1.5 ml-7 text-xs bg-amber-50/80 border border-amber-200 rounded-lg p-2.5 text-amber-900 flex items-start gap-2">
+                                        <AlertTriangle
+                                          size={14}
+                                          className="text-amber-600 shrink-0 mt-0.5"
+                                        />
+                                        <div className="space-y-0.5">
+                                          <span className="font-bold text-amber-950">
+                                            Catatan Temuan:
+                                          </span>
+                                          <p className="italic text-amber-900 font-normal">
+                                            &ldquo;{item.temuan}&rdquo;
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span
-                              className={`px-2.5 py-1 rounded-lg font-bold text-xs ${
-                                item.jawaban === "Ya"
-                                  ? item.is_reverse
-                                    ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                    : "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                  : item.is_reverse
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                  : "bg-rose-100 text-rose-800 border border-rose-300"
-                              }`}
-                            >
-                              Jawaban: {item.jawaban}
-                            </span>
-
-                            <span
-                              className={`px-2 py-1 rounded-lg font-black text-xs ${
-                                item.skor === 1
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-rose-600 text-white"
-                              }`}
-                            >
-                              {item.skor === 1 ? "1 Poin" : "0 Poin"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Temuan */}
-                        {item.temuan && (
-                          <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-start gap-2 text-slate-700">
-                            <span className="font-bold text-slate-900 shrink-0">
-                              Catatan Temuan:
-                            </span>
-                            <p className="font-normal italic text-slate-700 bg-white/80 p-2 rounded-lg border border-slate-200/80 w-full">
-                              "{item.temuan}"
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ));
-                  })()}
-                </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
-              {/* FOOTER DETAIL */}
-              <div className="p-4 bg-slate-50 border-t border-slate-200 rounded-b-2xl flex items-center justify-between">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => window.print()}
-                  className="text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Printer size={14} />
-                  Cetak Laporan
-                </Button>
+              {/* FOOTER DETAIL MODAL (TEMPAT KHUSUS CETAK & EDIT PROYEK) */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 rounded-b-2xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/* Cetak Rincian Proyek Ini */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadProjectExcel(selectedRecord)}
+                      className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FileSpreadsheet size={14} />
+                      Unduh Excel Proyek Ini
+                    </Button>
 
-                <Button
-                  type="button"
-                  onClick={() => setDetailModalOpen(false)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer"
-                >
-                  Tutup
-                </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadProjectPDF(selectedRecord)}
+                      className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer size={14} />
+                      Cetak PDF Proyek Ini
+                    </Button>
+
+                    {/* Cetak Rekap Global */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadGlobalExcel}
+                      className="text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border-slate-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FileSpreadsheet size={14} className="text-emerald-600" />
+                      Rekap Global (Excel)
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadGlobalPDF}
+                      className="text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border-slate-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer size={14} className="text-rose-600" />
+                      Rekap Global (PDF)
+                    </Button>
+                  </div>
+
+                  {/* Tombol Edit & Tutup */}
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDetailModalOpen(false);
+                        setRecordToEdit(selectedRecord);
+                        setEditModalOpen(true);
+                      }}
+                      className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Pencil size={14} />
+                      Edit Data Proyek
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setDetailModalOpen(false)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer px-5"
+                    >
+                      Tutup
+                    </Button>
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -1389,7 +2561,17 @@ export default function PerformanceK3Page() {
       </Dialog>
 
       {/* ========================================================================= */}
-      {/* MODAL KONFIRMASI HAPUS                                                    */}
+      {/* MODAL 3: EDIT PENILAIAN (DARI FILE app/performance/edit.tsx)              */}
+      {/* ========================================================================= */}
+      <EditPerformanceK3Modal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        record={recordToEdit}
+        onSuccess={fetchRecords}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: KONFIRMASI HAPUS DATA                                            */}
       {/* ========================================================================= */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="w-[90vw] sm:max-w-md p-6 bg-white rounded-2xl shadow-xl">
@@ -1400,15 +2582,15 @@ export default function PerformanceK3Page() {
 
             <div className="text-center space-y-1">
               <DialogTitle className="text-lg font-black text-slate-800">
-                Hapus Hasil Penilaian?
+                Hapus Data Penilaian?
               </DialogTitle>
-              <p className="text-xs text-slate-500">
+              <DialogDescription className="text-xs text-slate-500">
                 Apakah Anda yakin ingin menghapus data penilaian K3 untuk proyek{" "}
                 <span className="font-bold text-slate-700">
-                  "{recordToDelete?.nama_proyek}"
+                  &ldquo;{recordToDelete?.nama_proyek}&rdquo;
                 </span>
                 ? Tindakan ini tidak dapat dibatalkan.
-              </p>
+              </DialogDescription>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -1416,14 +2598,14 @@ export default function PerformanceK3Page() {
                 variant="outline"
                 onClick={() => setDeleteConfirmOpen(false)}
                 disabled={isDeleting}
-                className="text-xs rounded-xl"
+                className="text-xs rounded-xl cursor-pointer"
               >
                 Batal
               </Button>
               <Button
                 onClick={handleDeleteRecord}
                 disabled={isDeleting}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl"
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer"
               >
                 {isDeleting ? "Menghapus..." : "Ya, Hapus Data"}
               </Button>
